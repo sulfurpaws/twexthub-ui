@@ -31,22 +31,23 @@ afterEach(() => {
 });
 
 describe('SignupPage', () => {
-  const namespaceInput = () => screen.getByPlaceholderText('your-username');
-  const displayNameInput = () => screen.getByPlaceholderText('e.g. Kane Marshall');
-  const passwordInput = () => screen.getByPlaceholderText('Minimum 8 characters');
+  const namespaceInput = () => screen.findByPlaceholderText('your-username');
+  const displayNameInput = () => screen.findByPlaceholderText('e.g. Kane Marshall');
+  const passwordInput = () => screen.findByPlaceholderText('Minimum 8 characters');
 
-  it('renders the registration form and terms version link', () => {
+  it('renders the registration form and terms version link', async () => {
     render(<SignupPage onNavigate={noop} />);
     expect(
       screen.getByRole('heading', { level: 1, name: 'Create an account' }),
     ).toBeInTheDocument();
-    expect(namespaceInput()).toBeInTheDocument();
-    expect(displayNameInput()).toBeInTheDocument();
+    expect(await namespaceInput()).toBeInTheDocument();
+    expect(await displayNameInput()).toBeInTheDocument();
     expect(screen.getByText('Terms of Service (v4)')).toBeInTheDocument();
   });
 
-  it('requires a namespace and password', () => {
+  it('requires a namespace and password', async () => {
     render(<SignupPage onNavigate={noop} />);
+    await namespaceInput();
     const form = document.querySelector('form');
     expect(form).not.toBeNull();
     fireEvent.submit(form!);
@@ -56,8 +57,8 @@ describe('SignupPage', () => {
   it('enforces a minimum password length', async () => {
     const user = userEvent.setup();
     render(<SignupPage onNavigate={noop} />);
-    await user.type(namespaceInput(), 'kane');
-    await user.type(passwordInput(), 'short');
+    await user.type(await namespaceInput(), 'kane');
+    await user.type(await passwordInput(), 'short');
     await user.click(screen.getByRole('button', { name: 'Create account' }));
     expect(screen.getByText('Password must be at least 8 characters long.')).toBeInTheDocument();
   });
@@ -65,8 +66,8 @@ describe('SignupPage', () => {
   it('requires agreeing to the terms', async () => {
     const user = userEvent.setup();
     render(<SignupPage onNavigate={noop} />);
-    await user.type(namespaceInput(), 'kane');
-    await user.type(passwordInput(), 'long-enough-pass');
+    await user.type(await namespaceInput(), 'kane');
+    await user.type(await passwordInput(), 'long-enough-pass');
     await user.click(screen.getByRole('checkbox'));
     await user.click(screen.getByRole('button', { name: 'Create account' }));
     expect(screen.getByText(/You must agree to the Terms of Service/)).toBeInTheDocument();
@@ -76,9 +77,9 @@ describe('SignupPage', () => {
     const onNavigate = vi.fn();
     const user = userEvent.setup();
     render(<SignupPage onNavigate={onNavigate} />);
-    await user.type(namespaceInput(), 'Kane');
-    await user.type(displayNameInput(), 'Kane Marshall');
-    await user.type(passwordInput(), 'long-enough-pass');
+    await user.type(await namespaceInput(), 'Kane');
+    await user.type(await displayNameInput(), 'Kane Marshall');
+    await user.type(await passwordInput(), 'long-enough-pass');
     await user.click(screen.getByRole('button', { name: 'Create account' }));
     expect(authState.signup).toHaveBeenCalledWith('kane', 'long-enough-pass', 'Kane Marshall');
     expect(authState.acceptCurrentTerms).toHaveBeenCalled();
@@ -89,7 +90,7 @@ describe('SignupPage', () => {
     const onNavigate = vi.fn();
     const user = userEvent.setup();
     render(<SignupPage onNavigate={onNavigate} />);
-    await user.click(screen.getByRole('button', { name: /^Sign in$/ }));
+    await user.click(await screen.findByRole('button', { name: /^Sign in$/ }));
     expect(onNavigate).toHaveBeenCalledWith('login');
   });
 
@@ -105,12 +106,13 @@ describe('SignupPage', () => {
     useAuthMock.mockReturnValue(authState);
     const user = userEvent.setup();
     render(<SignupPage onNavigate={onNavigate} />);
+    await namespaceInput();
 
     expect(screen.queryByRole('checkbox')).toBeNull();
     expect(screen.queryByText(/Terms of Service/)).toBeNull();
 
-    await user.type(namespaceInput(), 'kane');
-    await user.type(passwordInput(), 'long-enough-pass');
+    await user.type(await namespaceInput(), 'kane');
+    await user.type(await passwordInput(), 'long-enough-pass');
     await user.click(screen.getByRole('button', { name: 'Create account' }));
 
     expect(authState.signup).toHaveBeenCalled();

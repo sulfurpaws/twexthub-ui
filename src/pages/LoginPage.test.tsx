@@ -26,18 +26,19 @@ afterEach(() => {
 });
 
 describe('LoginPage', () => {
-  const namespaceInput = () => screen.getByPlaceholderText('your-username');
-  const passwordInput = () => screen.getByLabelText('Password');
+  const namespaceInput = () => screen.findByPlaceholderText('your-username');
+  const passwordInput = () => screen.findByLabelText('Password');
 
-  it('renders the sign-in form', () => {
+  it('renders the sign-in form', async () => {
     render(<LoginPage onNavigate={noop} />);
     expect(screen.getByRole('heading', { level: 1, name: 'Sign in to Twext' })).toBeInTheDocument();
-    expect(namespaceInput()).toBeInTheDocument();
-    expect(passwordInput()).toBeInTheDocument();
+    expect(await namespaceInput()).toBeInTheDocument();
+    expect(await passwordInput()).toBeInTheDocument();
   });
 
-  it('validates empty submissions', () => {
+  it('validates empty submissions', async () => {
     render(<LoginPage onNavigate={noop} />);
+    await namespaceInput();
     const form = document.querySelector('form');
     expect(form).not.toBeNull();
     fireEvent.submit(form!);
@@ -49,8 +50,8 @@ describe('LoginPage', () => {
     const onNavigate = vi.fn();
     const user = userEvent.setup();
     render(<LoginPage onNavigate={onNavigate} />);
-    await user.type(namespaceInput(), 'Kane');
-    await user.type(passwordInput(), 'secret');
+    await user.type(await namespaceInput(), 'Kane');
+    await user.type(await passwordInput(), 'secret');
     await user.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(authState.login).toHaveBeenCalledWith('kane', 'secret');
     expect(onNavigate).toHaveBeenCalledWith('dashboard');
@@ -60,8 +61,8 @@ describe('LoginPage', () => {
     authState.login.mockRejectedValue(new ApiError('Invalid credentials.', 401));
     const user = userEvent.setup();
     render(<LoginPage onNavigate={noop} />);
-    await user.type(namespaceInput(), 'kane');
-    await user.type(passwordInput(), 'wrong');
+    await user.type(await namespaceInput(), 'kane');
+    await user.type(await passwordInput(), 'wrong');
     await user.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(await screen.findByText('Invalid credentials.')).toBeInTheDocument();
   });
@@ -70,7 +71,7 @@ describe('LoginPage', () => {
     const onNavigate = vi.fn();
     const user = userEvent.setup();
     render(<LoginPage onNavigate={onNavigate} />);
-    await user.click(screen.getByRole('button', { name: /Sign up/ }));
+    await user.click(await screen.findByRole('button', { name: /Sign up/ }));
     expect(onNavigate).toHaveBeenCalledWith('signup');
   });
 

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-import { ExtensionSummary, VersionInfo } from '../types/api';
+import { ExtensionSummary, PaginatedList, VersionInfo } from '../types/api';
 import { ExtensionCard } from '../components/ExtensionCard';
 import { WebhookPanel } from '../components/WebhookPanel';
 import { Icon } from '../components/Icon';
@@ -15,6 +15,25 @@ interface PendingVersionItem {
   version: VersionInfo;
 }
 
+/**
+ * Walks a cursor-paginated endpoint to its end so a dashboard tile counts
+ * everything the account owns, not just the first page.
+ */
+async function fetchAllPages<T>(
+  fetcher: (params?: { cursor?: string; limit?: number }) => Promise<PaginatedList<T>>,
+): Promise<T[]> {
+  const all: T[] = [];
+  let cursor: string | undefined;
+  let guard = 0;
+  do {
+    const res = await fetcher(cursor ? { cursor, limit: 50 } : { limit: 50 });
+    all.push(...(res?.data || []));
+    cursor = res?.pagination?.hasMore ? res.pagination.nextCursor || undefined : undefined;
+    guard += 1;
+  } while (cursor && guard < 1000);
+  return all;
+}
+
 export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const { user, isAuthenticated, isLoading } = useAuth();
   const [userExtensions, setUserExtensions] = useState<ExtensionSummary[]>([]);
@@ -22,16 +41,17 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const [webhooksFor, setWebhooksFor] = useState<{ namespace: string; id: string } | null>(null);
   const [pendingVersions, setPendingVersions] = useState<PendingVersionItem[]>([]);
   const [rejectedVersions, setRejectedVersions] = useState<PendingVersionItem[]>([]);
-  const [_loadingPending, setLoadingPending] = useState(false);
+  const [loadingPending, setLoadingPending] = useState(false);
+  const [pendingError, setPendingError] = useState<string | null>(null);
 
   const loadUserExtensions = useCallback(async () => {
     if (!user) return;
     setLoadingExts(true);
     try {
-      // Query extensions by namespace
-      const res = await api.searchExtensions(user.namespace, { limit: 50 });
-      // Filter strictly to user namespace
-      const own = (res.data || []).filter((ext) => ext.namespace === user.namespace);
+      // Search is namespace-scoped but still paginated, so walk every page and
+      // then keep strictly to the user's own namespace.
+      const all = await fetchAllPages((params) => api.searchExtensions(user.namespace, params));
+      const own = all.filter((ext) => ext.namespace === user.namespace);
       setUserExtensions(own);
     } catch {
       setUserExtensions([]);
@@ -44,31 +64,46 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
     if (!user || userExtensions.length === 0) {
       setPendingVersions([]);
       setRejectedVersions([]);
+      setPendingError(null);
       return;
     }
     setLoadingPending(true);
+    setPendingError(null);
+    let failed = 0;
     try {
       const pending: PendingVersionItem[] = [];
       const rejected: PendingVersionItem[] = [];
       for (const ext of userExtensions) {
-        const p = await api
-          .getExtensionVersions(ext.namespace, ext.id, { status: 'pending' })
-          .catch(() => ({ data: [] }));
-        const r = await api
-          .getExtensionVersions(ext.namespace, ext.id, { status: 'rejected' })
-          .catch(() => ({ data: [] }));
-        for (const v of p.data || []) {
+        // Each status is paged to the end; a failure here is counted rather than
+        // silently shown as "nothing pending", while other extensions proceed.
+        const p = await fetchAllPages((params) =>
+          api.getExtensionVersions(ext.namespace, ext.id, { ...params, status: 'pending' }),
+        ).catch(() => {
+          failed += 1;
+          return [] as VersionInfo[];
+        });
+        const r = await fetchAllPages((params) =>
+          api.getExtensionVersions(ext.namespace, ext.id, { ...params, status: 'rejected' }),
+        ).catch(() => {
+          failed += 1;
+          return [] as VersionInfo[];
+        });
+        for (const v of p) {
           pending.push({ extension: ext, version: v });
         }
-        for (const v of r.data || []) {
+        for (const v of r) {
           rejected.push({ extension: ext, version: v });
         }
       }
       setPendingVersions(pending);
       setRejectedVersions(rejected);
+      if (failed > 0) {
+        setPendingError(
+          `Could not load ${failed} review ${failed === 1 ? 'list' : 'lists'}. Some versions may be missing.`,
+        );
+      }
     } catch {
-      setPendingVersions([]);
-      setRejectedVersions([]);
+      setPendingError('Could not load every review list. Some versions may be missing.');
     } finally {
       setLoadingPending(false);
     }
@@ -187,6 +222,21 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
         )}
       </div>
 
+      {pendingError && (
+        <div role="alert" data-tone="danger" className="alert items-center text-xs">
+          <Icon name="error" className="shrink-0" />
+          <div className="min-w-0 flex-1 leading-tight">{pendingError}</div>
+          <button
+            type="button"
+            onClick={() => void loadPending()}
+            disabled={loadingPending}
+            className="btn btn-secondary btn-sm disabled:opacity-50"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {(pendingVersions.length > 0 || rejectedVersions.length > 0) && (
         <div className="space-y-4">
           <div className="flex items-center justify-between pb-2 border-b border-line">
@@ -224,7 +274,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                     <button
                       onClick={() =>
                         onNavigate(
-                          `ext/${item.extension.namespace}/${item.extension.id}?version=${item.version.version}`,
+                          `ext/${item.extension.namespace}/${item.extension.id}?version=${encodeURIComponent(item.version.version)}`,
                         )
                       }
                       className="btn btn-secondary btn-sm"
@@ -262,7 +312,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                       <button
                         onClick={() =>
                           onNavigate(
-                            `ext/${item.extension.namespace}/${item.extension.id}?version=${item.version.version}`,
+                            `ext/${item.extension.namespace}/${item.extension.id}?version=${encodeURIComponent(item.version.version)}`,
                           )
                         }
                         className="btn btn-secondary btn-sm"

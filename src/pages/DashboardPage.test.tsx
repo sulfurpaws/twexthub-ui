@@ -1,10 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DashboardPage } from './DashboardPage';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { makeAuthState, makeExtension, paginated, noop } from '../test/testUtils';
+import {
+  makeAuthState,
+  makeExtension,
+  makePendingVersion,
+  paginated,
+  noop,
+} from '../test/testUtils';
 
 vi.mock('../services/api');
 vi.mock('../context/AuthContext');
@@ -65,6 +71,30 @@ describe('DashboardPage', () => {
     apiMock.searchExtensions.mockResolvedValue(paginated([]));
     render(<DashboardPage onNavigate={noop} />);
     expect(await screen.findByText('No extensions under @kane yet')).toBeInTheDocument();
+  });
+
+  it('collects every page of owned extensions', async () => {
+    apiMock.searchExtensions
+      .mockResolvedValueOnce(paginated([makeExtension({ id: 'one' })], 'cursor-2', true))
+      .mockResolvedValueOnce(paginated([makeExtension({ id: 'two' })]));
+    render(<DashboardPage onNavigate={noop} />);
+
+    await waitFor(() => expect(apiMock.searchExtensions).toHaveBeenCalledTimes(2));
+    expect(apiMock.searchExtensions).toHaveBeenLastCalledWith('kane', {
+      cursor: 'cursor-2',
+      limit: 50,
+    });
+  });
+
+  it('keeps loaded reviews and offers a retry when one list fails', async () => {
+    apiMock.getExtensionVersions
+      .mockResolvedValueOnce(paginated([makePendingVersion({ version: '2.0.0' })]))
+      .mockRejectedValueOnce(new Error('boom'));
+    render(<DashboardPage onNavigate={noop} />);
+
+    expect(await screen.findByText('Demo Extension v2.0.0')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load 1 review list');
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
   });
 
   it('redirects a signed-out visitor to login', async () => {

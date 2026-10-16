@@ -159,18 +159,25 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
   const { descriptor } = useAuthDescriptor();
   const [identities, setIdentities] = useState<OidcIdentity[]>([]);
   const [loadingIdentities, setLoadingIdentities] = useState(true);
+  const [identitiesLoadFailed, setIdentitiesLoadFailed] = useState(false);
   const [linkingIdentity, setLinkingIdentity] = useState(false);
   const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
   // Once the account signs in through the provider, the provider owns the
   // password: linking another identity and changing a password both stop
   // being offered.
   const hasLinkedIdentity = identities.length > 0;
+  // An empty list only means "no password form" once the list has actually
+  // loaded; while it is in flight or has failed, the provider may well own the
+  // password, so the controls stay hidden rather than appear on a fallback.
+  const showPasswordControls = !loadingIdentities && !identitiesLoadFailed && !hasLinkedIdentity;
 
   const loadIdentities = useCallback(async () => {
     setLoadingIdentities(true);
+    setIdentitiesLoadFailed(false);
     try {
       setIdentities(await api.getOidcIdentities());
     } catch {
+      setIdentitiesLoadFailed(true);
       setIdentities([]);
     } finally {
       setLoadingIdentities(false);
@@ -368,7 +375,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
         }
       }
 
-      if (!hasLinkedIdentity && newPassword.trim()) {
+      if (showPasswordControls && newPassword.trim()) {
         if (newPassword.length < 8) {
           throw new Error('New password must be at least 8 characters.');
         }
@@ -685,7 +692,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
                       />
                     </div>
 
-                    {!hasLinkedIdentity && (
+                    {showPasswordControls && (
                       <div>
                         <label htmlFor="settings-new-password" className="label block mb-1">
                           New Password{' '}
@@ -777,7 +784,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
                       round
                     />
 
-                    {!hasLinkedIdentity && newPassword.trim() && (
+                    {showPasswordControls && newPassword.trim() && (
                       <div className="sm:col-span-2">
                         <label htmlFor="settings-current-password" className="label block mb-1">
                           Current Password{' '}

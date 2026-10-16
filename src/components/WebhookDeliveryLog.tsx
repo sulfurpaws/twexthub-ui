@@ -134,8 +134,8 @@ export const WebhookDeliveryLog: React.FC<WebhookDeliveryLogProps> = ({
 
       {loading ? (
         <div className="space-y-2">
-          <div className="h-16 bg-wash dark:bg-raised rounded animate-pulse" />
-          <div className="h-16 bg-wash dark:bg-raised rounded animate-pulse" />
+          <div className="h-16 bg-wash dark:bg-raised rounded motion-safe:animate-pulse" />
+          <div className="h-16 bg-wash dark:bg-raised rounded motion-safe:animate-pulse" />
         </div>
       ) : deliveries.length > 0 ? (
         <div className="divide-y divide-line border border-line rounded-lg max-h-[60vh] overflow-y-auto">

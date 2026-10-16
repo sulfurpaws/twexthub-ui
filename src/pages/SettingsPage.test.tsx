@@ -201,7 +201,7 @@ describe('SettingsPage', () => {
     const user = userEvent.setup();
     renderWithProviders(<SettingsPage onNavigate={noop} />);
 
-    await user.type(screen.getByPlaceholderText('Minimum 8 characters'), 'new-secret-1');
+    await user.type(await screen.findByPlaceholderText('Minimum 8 characters'), 'new-secret-1');
     await user.type(screen.getByPlaceholderText('Your existing password'), 'old-secret-1');
     await user.click(screen.getByRole('button', { name: 'Save Changes' }));
 
@@ -215,7 +215,7 @@ describe('SettingsPage', () => {
     const user = userEvent.setup();
     renderWithProviders(<SettingsPage onNavigate={noop} />);
 
-    await user.type(screen.getByPlaceholderText('Minimum 8 characters'), 'new-secret-1');
+    await user.type(await screen.findByPlaceholderText('Minimum 8 characters'), 'new-secret-1');
     await user.click(screen.getByRole('button', { name: 'Save Changes' }));
 
     expect(apiMock.updateUser).not.toHaveBeenCalled();
