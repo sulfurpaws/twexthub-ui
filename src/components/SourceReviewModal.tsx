@@ -126,6 +126,24 @@ export const SourceReviewModal: React.FC<SourceReviewModalProps> = ({
         </div>
       </div>
 
+      {item.warnings && item.warnings.length > 0 && (
+        <div className="px-5 py-3 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800/60">
+          <div className="flex items-start gap-2">
+            <Icon name="warning" className="text-amber-600 dark:text-amber-400 shrink-0" />
+            <div className="space-y-1">
+              <div className="text-xs font-semibold text-amber-900 dark:text-amber-200">
+                Publish warnings
+              </div>
+              <ul className="text-xs text-amber-800 dark:text-amber-300 space-y-0.5">
+                {item.warnings.map((w, i) => (
+                  <li key={i}>• {w}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Editor body */}
       <div className="flex-1 min-h-0 overflow-hidden px-5 py-4 flex flex-col">
         {isLoading ? (
