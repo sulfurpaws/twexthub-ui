@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { ExtensionSummary, PaginatedList, VersionInfo } from '../types/api';
@@ -52,9 +52,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const extensionsGenerationRef = useRef(0);
   const pendingGenerationRef = useRef(0);
   const userNamespaceRef = useRef<string | null>(null);
-  userNamespaceRef.current = user?.namespace ?? null;
   const userExtensionsRef = useRef<ExtensionSummary[]>(userExtensions);
-  userExtensionsRef.current = userExtensions;
+
+  // Written after every committed render, never during one, so the guards below
+  // only ever compare against state the user actually saw.
+  useLayoutEffect(() => {
+    userNamespaceRef.current = user?.namespace ?? null;
+    userExtensionsRef.current = userExtensions;
+  }, [user, userExtensions]);
 
   const loadUserExtensions = useCallback(async () => {
     if (!user) return;
