@@ -161,6 +161,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
   const [loadingIdentities, setLoadingIdentities] = useState(true);
   const [linkingIdentity, setLinkingIdentity] = useState(false);
   const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
+  // Once the account signs in through the provider, the provider owns the
+  // password: linking another identity and changing a password both stop
+  // being offered.
+  const hasLinkedIdentity = identities.length > 0;
 
   const loadIdentities = useCallback(async () => {
     setLoadingIdentities(true);
@@ -364,7 +368,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
         }
       }
 
-      if (newPassword.trim()) {
+      if (!hasLinkedIdentity && newPassword.trim()) {
         if (newPassword.length < 8) {
           throw new Error('New password must be at least 8 characters.');
         }
@@ -681,21 +685,23 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
                       />
                     </div>
 
-                    <div>
-                      <label htmlFor="settings-new-password" className="label block mb-1">
-                        New Password{' '}
-                        <span className="text-ink-3 normal-case">(leave blank to keep)</span>
-                      </label>
-                      <input
-                        id="settings-new-password"
-                        type="password"
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        placeholder="Minimum 8 characters"
-                        className="input"
-                        autoComplete="new-password"
-                      />
-                    </div>
+                    {!hasLinkedIdentity && (
+                      <div>
+                        <label htmlFor="settings-new-password" className="label block mb-1">
+                          New Password{' '}
+                          <span className="text-ink-3 normal-case">(leave blank to keep)</span>
+                        </label>
+                        <input
+                          id="settings-new-password"
+                          type="password"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          placeholder="Minimum 8 characters"
+                          className="input"
+                          autoComplete="new-password"
+                        />
+                      </div>
+                    )}
 
                     <div className="sm:col-span-2">
                       <label htmlFor="settings-bio" className="label block mb-1">
@@ -771,7 +777,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
                       round
                     />
 
-                    {newPassword.trim() && (
+                    {!hasLinkedIdentity && newPassword.trim() && (
                       <div className="sm:col-span-2">
                         <label htmlFor="settings-current-password" className="label block mb-1">
                           Current Password{' '}
@@ -845,7 +851,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
                   <p className="text-xs text-ink-3">No identities linked yet.</p>
                 )}
 
-                {descriptor?.oidc && (
+                {descriptor?.oidc && !hasLinkedIdentity && (
                   <button
                     onClick={handleLinkIdentity}
                     disabled={linkingIdentity}
