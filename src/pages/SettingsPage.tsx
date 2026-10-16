@@ -1119,8 +1119,41 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
               </div>
             </div>
           )}
+
+          {/* Webhooks Tab */}
+          {activeTab === 'webhooks' && (
+            <div className="space-y-6">
+              <div className="card p-5 space-y-3">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <h2 className="text-sm font-semibold text-ink">Account Webhooks</h2>
+                    <p className="text-xs text-ink-3 mt-1 max-w-xl">
+                      Account-level webhooks notify you when events occur for any extension in{' '}
+                      <span className="font-mono text-ink-2">@{user.namespace}</span>. These are
+                      separate from organization or per-extension webhooks.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowAccountWebhooks(true)}
+                    className="btn btn-secondary btn-sm"
+                  >
+                    <Icon name="webhook" className="icon-sm" />
+                    Manage webhooks
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      {showAccountWebhooks && (
+        <WebhookPanel
+          namespace={user.namespace}
+          account
+          onClose={() => setShowAccountWebhooks(false)}
+        />
+      )}
 
       {confirmDialog}
     </div>
