@@ -207,8 +207,13 @@ export const ExtensionDetailPage: React.FC<ExtensionDetailPageProps> = ({
   const queryVersion = new URLSearchParams(window.location.search).get('version');
 
   useEffect(() => {
-    if (!extension || !queryVersion || queryVersion === expandedVersion) return;
-    void handleToggleVersion(queryVersion);
+    if (!extension) return;
+    // Stay in sync with the URL: open the version it names, and collapse the
+    // expanded one when the param is gone (e.g. browser back).
+    if (queryVersion === expandedVersion) return;
+    const target = queryVersion ?? expandedVersion;
+    if (!target) return;
+    void handleToggleVersion(target);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [extension, queryVersion, expandedVersion]);
 
@@ -271,24 +276,7 @@ export const ExtensionDetailPage: React.FC<ExtensionDetailPageProps> = ({
     }
   };
 
-  const handleToggleVersion = async (version: string) => {
-    if (expandedVersion === version) {
-      setExpandedVersion(null);
-      versionRequestRef.current = null;
-      const params = new URLSearchParams(window.location.search);
-      if (params.has('version')) {
-        params.delete('version');
-        const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`;
-        window.history.replaceState(null, '', next);
-      }
-      return;
-    }
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('version') !== version) {
-      params.set('version', version);
-      window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
-    }
-    setExpandedVersion(version);
+  const loadVersionDetail = async (version: string) => {
     setVersionDetail(null);
     setVersionDetailError(null);
     setLoadingVersion(true);
@@ -309,6 +297,27 @@ export const ExtensionDetailPage: React.FC<ExtensionDetailPageProps> = ({
         setLoadingVersion(false);
       }
     }
+  };
+
+  const handleToggleVersion = async (version: string) => {
+    if (expandedVersion === version) {
+      setExpandedVersion(null);
+      versionRequestRef.current = null;
+      const params = new URLSearchParams(window.location.search);
+      if (params.has('version')) {
+        params.delete('version');
+        const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`;
+        window.history.replaceState(null, '', next);
+      }
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('version') !== version) {
+      params.set('version', version);
+      window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
+    }
+    setExpandedVersion(version);
+    await loadVersionDetail(version);
   };
 
   const handleYankVersion = async (version: string) => {
@@ -437,13 +446,22 @@ export const ExtensionDetailPage: React.FC<ExtensionDetailPageProps> = ({
 
   // The metadata panel shared by a listed version row and the row for a fetched
   // version the list does not carry (e.g. a pending one reached via `?version=`).
-  const renderVersionMetadata = () => (
+  const renderVersionMetadata = (version: string) => (
     <div className="px-4 pb-4">
       <div className="border border-line rounded-lg bg-wash dark:bg-raised p-3 text-meta space-y-1.5">
         {loadingVersion ? (
           <p className="text-ink-3">Loading version metadata...</p>
         ) : versionDetailError ? (
-          <p className="text-rose-700 dark:text-rose-400">{versionDetailError}</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-rose-700 dark:text-rose-400">{versionDetailError}</p>
+            <button
+              type="button"
+              onClick={() => void loadVersionDetail(version)}
+              className="btn btn-secondary btn-sm shrink-0"
+            >
+              Retry
+            </button>
+          </div>
         ) : versionDetail ? (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
@@ -550,39 +568,43 @@ export const ExtensionDetailPage: React.FC<ExtensionDetailPageProps> = ({
 
   // A version reached through `?version=` may not be in the list the detail
   // endpoint returns (pending/rejected versions are omitted), so it gets a row
-  // of its own unless a listed row already covers it.
-  const extraVersion =
-    versionDetail && !(extension.versions || []).some((v) => v.version === versionDetail.version)
-      ? versionDetail
+  // of its own unless a listed row already covers it. The row is keyed on the
+  // expanded version, not the fetched detail, so it stays visible while that
+  // version is loading or when the fetch fails.
+  const extraVersionId =
+    expandedVersion && !(extension.versions || []).some((v) => v.version === expandedVersion)
+      ? expandedVersion
       : null;
+  const extraVersionDetail =
+    versionDetail && versionDetail.version === extraVersionId ? versionDetail : null;
 
-  const extraVersionRow = extraVersion && (
-    <div key={extraVersion.version} className="bg-surface dark:bg-raised">
+  const extraVersionRow = extraVersionId && (
+    <div key={extraVersionId} className="bg-surface dark:bg-raised">
       <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-sm font-bold text-ink">v{extraVersion.version}</span>
-            <StatusBadge status={extraVersion.status} size="sm" />
+            <span className="font-mono text-sm font-bold text-ink">v{extraVersionId}</span>
+            {extraVersionDetail && <StatusBadge status={extraVersionDetail.status} size="sm" />}
           </div>
-          {extraVersion.rejectionReason && (
+          {extraVersionDetail?.rejectionReason && (
             <p className="text-xs text-rose-700 dark:text-rose-400">
-              {extraVersion.rejectionReason}
+              {extraVersionDetail.rejectionReason}
             </p>
           )}
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <button
-            onClick={() => handleToggleVersion(extraVersion.version)}
-            title={`Show metadata for v${extraVersion.version}`}
-            aria-label={`Metadata for v${extraVersion.version}`}
-            aria-expanded={expandedVersion === extraVersion.version}
+            onClick={() => handleToggleVersion(extraVersionId)}
+            title={`Show metadata for v${extraVersionId}`}
+            aria-label={`Metadata for v${extraVersionId}`}
+            aria-expanded={expandedVersion === extraVersionId}
             className="p-1.5 text-ink-3 hover:text-lilac-700 dark:hover:text-lilac-300 rounded-md hover:bg-wash dark:hover:bg-raised transition-colors"
           >
             <Icon name="info" className="icon-sm" />
           </button>
         </div>
       </div>
-      {expandedVersion === extraVersion.version && renderVersionMetadata()}
+      {expandedVersion === extraVersionId && renderVersionMetadata(extraVersionId)}
     </div>
   );
 
@@ -911,12 +933,12 @@ export const ExtensionDetailPage: React.FC<ExtensionDetailPageProps> = ({
                       </div>
                     </div>
 
-                    {expandedVersion === ver.version && renderVersionMetadata()}
+                    {expandedVersion === ver.version && renderVersionMetadata(ver.version)}
                   </div>
                 ))}
                 {extraVersionRow}
               </div>
-            ) : extraVersion ? (
+            ) : extraVersionId ? (
               <div className="divide-y divide-line border border-line rounded-lg">
                 {extraVersionRow}
               </div>

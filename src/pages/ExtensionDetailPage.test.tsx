@@ -496,6 +496,60 @@ describe('ExtensionDetailPage', () => {
     expect(apiMock.getVersion).toHaveBeenCalledWith('kane', 'demo', '2.0.0');
   });
 
+  it('keeps the deep-linked version row and offers a retry when its metadata fails', async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, '', '/ext/kane/demo?version=2.0.0');
+    apiMock.getVersion
+      .mockRejectedValueOnce(new ApiError('Could not load version metadata', 500))
+      .mockResolvedValueOnce({
+        namespace: 'kane',
+        id: 'demo',
+        version: '2.0.0',
+        status: 'pending',
+        name: 'Demo Extension',
+        license: 'MIT',
+        description: 'A test extension.',
+        createdAt: '2026-03-01T00:00:00Z',
+        downloads: 0,
+      });
+    render(<ExtensionDetailPage namespace="kane" id="demo" onNavigate={noop} />);
+
+    await screen.findByRole('heading', { level: 1, name: 'Demo Extension' });
+    expect(await screen.findByText('Could not load version metadata')).toBeInTheDocument();
+    expect(screen.getByText('v2.0.0')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.queryByText('Could not load version metadata')).toBeNull());
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+
+  it('collapses the expanded version when the version query parameter is removed', async () => {
+    window.history.replaceState(null, '', '/ext/kane/demo?version=2.0.0');
+    apiMock.getVersion.mockResolvedValue({
+      namespace: 'kane',
+      id: 'demo',
+      version: '2.0.0',
+      status: 'pending',
+      name: 'Demo Extension',
+      license: 'MIT',
+      description: 'A test extension.',
+      createdAt: '2026-03-01T00:00:00Z',
+      downloads: 0,
+    });
+    const { rerender } = render(
+      <ExtensionDetailPage namespace="kane" id="demo" onNavigate={noop} />,
+    );
+
+    await screen.findByRole('heading', { level: 1, name: 'Demo Extension' });
+    expect(await screen.findByText('v2.0.0')).toBeInTheDocument();
+
+    // Simulate a navigation that drops the param (e.g. browser back).
+    window.history.replaceState(null, '', '/ext/kane/demo');
+    rerender(<ExtensionDetailPage namespace="kane" id="demo" onNavigate={noop} />);
+
+    await waitFor(() => expect(screen.queryByText('v2.0.0')).toBeNull());
+  });
+
   it('does not ask a visitor for transfer offers it could not answer', async () => {
     useAuthMock.mockReturnValue(makeAuthState({ user: null, token: null, isAuthenticated: false }));
     render(<ExtensionDetailPage namespace="kane" id="demo" onNavigate={noop} />);

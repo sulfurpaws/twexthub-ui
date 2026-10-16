@@ -93,9 +93,9 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate }) => {
 
         {loadingOptions ? (
           <div className="space-y-3" role="status" aria-label="Loading sign-up options">
-            <div className="h-5 w-2/3 mx-auto bg-wash dark:bg-raised rounded animate-pulse" />
-            <div className="h-9 bg-wash dark:bg-raised rounded animate-pulse" />
-            <div className="h-32 bg-wash dark:bg-raised rounded animate-pulse" />
+            <div className="h-5 w-2/3 mx-auto bg-wash dark:bg-raised rounded motion-safe:animate-pulse" />
+            <div className="h-9 bg-wash dark:bg-raised rounded motion-safe:animate-pulse" />
+            <div className="h-32 bg-wash dark:bg-raised rounded motion-safe:animate-pulse" />
           </div>
         ) : descriptorError ? (
           <div data-tone="danger" className="alert items-center text-sm">
