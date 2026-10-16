@@ -332,6 +332,16 @@ export const WEBHOOK_EVENTS: WebhookEvent[] = [
   'owners.changed',
 ];
 
+export interface OidcProviderInfo {
+  issuer: string;
+  required: boolean;
+}
+
+export interface AuthDescriptor {
+  passwordAuth: boolean;
+  oidc: OidcProviderInfo | null;
+}
+
 export interface Webhook {
   id: number;
   url: string;

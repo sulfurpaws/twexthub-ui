@@ -283,6 +283,10 @@ class ApiService {
     return this.request<Meta>('/meta');
   }
 
+  async getAuthDescriptor(): Promise<AuthDescriptor> {
+    return this.request<AuthDescriptor>('/auth');
+  }
+
   async getExtensions(params?: {
     cursor?: string;
     limit?: number;
