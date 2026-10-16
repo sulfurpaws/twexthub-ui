@@ -108,6 +108,17 @@ describe('LoginPage', () => {
     expect(window.location.search).toBe('');
   });
 
+  it('does not navigate or show an error when the OIDC exchange is canceled', async () => {
+    const onNavigate = vi.fn();
+    authState.completeOidcLogin = vi.fn().mockResolvedValue(false);
+    window.history.replaceState(null, '', '/login?oidc_code=one-time');
+    render(<LoginPage onNavigate={onNavigate} />);
+    await waitFor(() => expect(authState.completeOidcLogin).toHaveBeenCalledWith('one-time'));
+    await waitFor(() => expect(window.location.search).toBe(''));
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(screen.queryByText('Sign-in could not be completed.')).not.toBeInTheDocument();
+  });
+
   it('surfaces a provider error carried back in the URL', async () => {
     window.history.replaceState(null, '', '/login?oidc_error=provider_unavailable');
     render(<LoginPage onNavigate={noop} />);

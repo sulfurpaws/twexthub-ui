@@ -170,7 +170,7 @@ export function makeAuthState(overrides: AuthOverrides = {}) {
   const logout = vi.fn(async () => {});
   const refreshUser = vi.fn(async () => {});
   const acceptCurrentTerms = vi.fn(async () => {});
-  const completeOidcLogin = vi.fn(async () => {});
+  const completeOidcLogin = vi.fn(async () => true);
 
   const hasUser = 'user' in overrides;
   const hasToken = 'token' in overrides;

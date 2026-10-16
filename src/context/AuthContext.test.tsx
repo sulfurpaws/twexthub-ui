@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AuthProvider, useAuth } from './AuthContext';
@@ -23,6 +23,7 @@ function deferred<T>() {
 
 function Probe() {
   const auth = useAuth();
+  const [oidcResult, setOidcResult] = useState('none');
   return (
     <div>
       <span data-testid="user">{auth.user?.namespace ?? 'null'}</span>
@@ -34,9 +35,19 @@ function Probe() {
       <span data-testid="hasTerms">{String(auth.hasTerms)}</span>
       <span data-testid="termsResolved">{String(auth.termsResolved)}</span>
       <span data-testid="role">{auth.user?.role ?? 'none'}</span>
+      <span data-testid="oidc-result">{oidcResult}</span>
       <button onClick={() => auth.login('kane', 'password')}>login</button>
       <button onClick={() => auth.logout()}>logout</button>
-      <button onClick={() => auth.completeOidcLogin('one-time').catch(() => {})}>oidc</button>
+      <button
+        onClick={() =>
+          auth
+            .completeOidcLogin('one-time')
+            .then((signedIn) => setOidcResult(String(signedIn)))
+            .catch(() => {})
+        }
+      >
+        oidc
+      </button>
       <button onClick={() => auth.acceptCurrentTerms().catch(() => {})}>accept</button>
     </div>
   );
@@ -249,6 +260,7 @@ describe('AuthContext', () => {
     await waitFor(() => expect(screen.getByTestId('token')).toHaveTextContent('tok-oidc'));
     expect(screen.getByTestId('user')).toHaveTextContent('kane');
     expect(screen.getByTestId('auth')).toHaveTextContent('true');
+    await waitFor(() => expect(screen.getByTestId('oidc-result')).toHaveTextContent('true'));
   });
 
   it('does not let automatic session cleanup cancel an in-flight OIDC exchange', async () => {
@@ -354,6 +366,8 @@ describe('AuthContext', () => {
 
     expect(screen.getByTestId('token')).toHaveTextContent('tok-login');
     expect(screen.getByTestId('user')).toHaveTextContent('kane');
+    // The superseded exchange must report cancellation, not success.
+    await waitFor(() => expect(screen.getByTestId('oidc-result')).toHaveTextContent('false'));
   });
 
   it('keeps a sign-out after an in-flight OIDC exchange resolves', async () => {

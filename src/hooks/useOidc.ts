@@ -98,7 +98,10 @@ export function useOidcCallback(options: {
     if (code) {
       stripParams('oidc_code');
       completeOidcLogin(code)
-        .then(() => options.onSignedIn?.())
+        .then((signedIn) => {
+          // A superseded exchange reports `false`; do not treat it as a login.
+          if (signedIn) options.onSignedIn?.();
+        })
         .catch((err: unknown) => {
           options.onError?.(
             err instanceof ApiError ? err.message : 'Sign-in could not be completed.',

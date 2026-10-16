@@ -17,8 +17,12 @@ interface AuthContextType {
   hasAcceptedCurrentTerms: boolean;
   login: (namespace: string, password: string) => Promise<void>;
   signup: (namespace: string, password: string, displayName?: string) => Promise<void>;
-  /** Redeems the provider's one-time code and adopts the resulting session. */
-  completeOidcLogin: (code: string) => Promise<void>;
+  /**
+   * Redeems the provider's one-time code and adopts the resulting session.
+   * Resolves `false` when the exchange was superseded by a newer sign-in or
+   * sign-out, so callers do not treat it as a successful login.
+   */
+  completeOidcLogin: (code: string) => Promise<boolean>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   acceptCurrentTerms: (version?: number) => Promise<void>;
@@ -233,12 +237,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const completeOidcLogin = async (code: string) => {
+  const completeOidcLogin = async (code: string): Promise<boolean> => {
     const attempt = ++authAttemptRef.current;
     const res = await api.exchangeOidcCode(code);
-    if (settleSignIn(attempt, res)) {
-      await fetchTermsVersion();
+    if (!settleSignIn(attempt, res)) {
+      // A newer sign-in or sign-out outranked this exchange; report the
+      // cancellation instead of resolving as a successful login.
+      return false;
     }
+    await fetchTermsVersion();
+    return true;
   };
 
   const acceptCurrentTerms = async (version?: number) => {
