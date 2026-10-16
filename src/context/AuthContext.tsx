@@ -203,9 +203,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [token, verifyAuth]);
 
-  // Adopts a sign-in only while its attempt is still the newest one. A
-  // superseded completion undoes the persistence the api layer already did and
-  // restores the session that settled in its place.
+  // Adopts a sign-in only while its attempt is still the newest one, persisting
+  // the chosen credentials through the api layer before flipping React state so
+  // storage and state cannot disagree. A superseded completion undoes the
+  // persistence the api layer already did and restores the session that
+  // settled in its place.
   const settleSignIn = (attempt: number, res: AuthSessionResponse): boolean => {
     if (authAttemptRef.current !== attempt) {
       const settled = settledSessionRef.current;
@@ -215,6 +217,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setToken(settled.token);
       return false;
     }
+    api.setToken(res.token);
+    api.setStoredUser(res.user);
     settledSessionRef.current = { token: res.token, user: res.user };
     setUser(res.user);
     setToken(res.token);

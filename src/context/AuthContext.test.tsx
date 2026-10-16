@@ -261,6 +261,11 @@ describe('AuthContext', () => {
     expect(screen.getByTestId('user')).toHaveTextContent('kane');
     expect(screen.getByTestId('auth')).toHaveTextContent('true');
     await waitFor(() => expect(screen.getByTestId('oidc-result')).toHaveTextContent('true'));
+    // The adoption branch owns persistence, so storage matches the state.
+    expect(apiMock.setToken).toHaveBeenCalledWith('tok-oidc');
+    expect(apiMock.setStoredUser).toHaveBeenCalledWith(
+      expect.objectContaining({ namespace: 'kane' }),
+    );
   });
 
   it('does not let automatic session cleanup cancel an in-flight OIDC exchange', async () => {
@@ -307,11 +312,14 @@ describe('AuthContext', () => {
     });
     await waitFor(() => expect(screen.getByTestId('token')).toHaveTextContent('tok-oidc'));
 
-    // When the cleanup finishes it must not tear down that session. The
-    // restore branch is the only caller of setToken with the OIDC token, so
-    // waiting on it confirms signOut has resumed past its await.
+    // When the cleanup finishes it must not tear down that session. Record how
+    // many times the api layer has already been written to (the adopt above),
+    // then confirm the cleanup adds its own write before asserting.
+    const writesBeforeCleanup = apiMock.setToken.mock.calls.length;
     logoutCall.resolve();
-    await waitFor(() => expect(apiMock.setToken).toHaveBeenCalledWith('tok-oidc'));
+    await waitFor(() =>
+      expect(apiMock.setToken.mock.calls.length).toBeGreaterThan(writesBeforeCleanup),
+    );
     expect(screen.getByTestId('token')).toHaveTextContent('tok-oidc');
     expect(apiMock.setToken).not.toHaveBeenCalledWith(null);
   });
@@ -368,6 +376,36 @@ describe('AuthContext', () => {
     expect(screen.getByTestId('user')).toHaveTextContent('kane');
     // The superseded exchange must report cancellation, not success.
     await waitFor(() => expect(screen.getByTestId('oidc-result')).toHaveTextContent('false'));
+  });
+
+  it('keeps the newer session when two concurrent exchanges settle out of order', async () => {
+    const older = deferred<AuthSessionResponse>();
+    const newer = deferred<AuthSessionResponse>();
+    apiMock.exchangeOidcCode.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+    renderProbe();
+
+    await userEvent.click(screen.getByRole('button', { name: 'oidc' }));
+    await userEvent.click(screen.getByRole('button', { name: 'oidc' }));
+
+    // The newer exchange settles first and is adopted.
+    newer.resolve({
+      user: makeUser({ namespace: 'newer' }),
+      token: 'tok-new',
+      session: makeSession(),
+    });
+    await waitFor(() => expect(screen.getByTestId('token')).toHaveTextContent('tok-new'));
+
+    // The older exchange settles afterwards; it is superseded, so the api layer
+    // must end up holding the newer session, not the late one.
+    older.resolve({
+      user: makeUser({ namespace: 'older' }),
+      token: 'tok-old',
+      session: makeSession(),
+    });
+    await waitFor(() => expect(apiMock.setToken).toHaveBeenLastCalledWith('tok-new'));
+
+    expect(screen.getByTestId('token')).toHaveTextContent('tok-new');
+    expect(screen.getByTestId('user')).toHaveTextContent('newer');
   });
 
   it('keeps a sign-out after an in-flight OIDC exchange resolves', async () => {
