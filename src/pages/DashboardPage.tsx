@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-import { ExtensionSummary } from '../types/api';
+import { ExtensionSummary, VersionInfo } from '../types/api';
 import { ExtensionCard } from '../components/ExtensionCard';
 import { WebhookPanel } from '../components/WebhookPanel';
 import { Icon } from '../components/Icon';
@@ -10,11 +10,19 @@ interface DashboardPageProps {
   onNavigate: (route: string) => void;
 }
 
+interface PendingVersionItem {
+  extension: ExtensionSummary;
+  version: VersionInfo;
+}
+
 export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const { user, isAuthenticated, isLoading } = useAuth();
   const [userExtensions, setUserExtensions] = useState<ExtensionSummary[]>([]);
   const [loadingExts, setLoadingExts] = useState(true);
   const [webhooksFor, setWebhooksFor] = useState<{ namespace: string; id: string } | null>(null);
+  const [pendingVersions, setPendingVersions] = useState<PendingVersionItem[]>([]);
+  const [rejectedVersions, setRejectedVersions] = useState<PendingVersionItem[]>([]);
+  const [loadingPending, setLoadingPending] = useState(false);
 
   const loadUserExtensions = useCallback(async () => {
     if (!user) return;
@@ -32,6 +40,40 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
     }
   }, [user]);
 
+  const loadPending = useCallback(async () => {
+    if (!user || userExtensions.length === 0) {
+      setPendingVersions([]);
+      setRejectedVersions([]);
+      return;
+    }
+    setLoadingPending(true);
+    try {
+      const pending: PendingVersionItem[] = [];
+      const rejected: PendingVersionItem[] = [];
+      for (const ext of userExtensions) {
+        const p = await api
+          .getExtensionVersions(ext.namespace, ext.id, { status: 'pending' })
+          .catch(() => ({ data: [] }));
+        const r = await api
+          .getExtensionVersions(ext.namespace, ext.id, { status: 'rejected' })
+          .catch(() => ({ data: [] }));
+        for (const v of p.data || []) {
+          pending.push({ extension: ext, version: v });
+        }
+        for (const v of r.data || []) {
+          rejected.push({ extension: ext, version: v });
+        }
+      }
+      setPendingVersions(pending);
+      setRejectedVersions(rejected);
+    } catch {
+      setPendingVersions([]);
+      setRejectedVersions([]);
+    } finally {
+      setLoadingPending(false);
+    }
+  }, [user, userExtensions]);
+
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       onNavigate('login');
@@ -42,6 +84,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
       loadUserExtensions();
     }
   }, [isAuthenticated, isLoading, user, onNavigate, loadUserExtensions]);
+
+  useEffect(() => {
+    void loadPending();
+  }, [loadPending]);
 
   if (isLoading) {
     return (
@@ -60,10 +106,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
     );
   }
 
-  // Search only ever returns published versions, so every row counts as
-  // published and none of them are waiting on review.
   const publishedCount = userExtensions.length;
-  const pendingCount = 0;
+  const pendingCount = pendingVersions.length;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
@@ -142,6 +186,102 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
           </div>
         )}
       </div>
+
+      {(pendingVersions.length > 0 || rejectedVersions.length > 0) && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-line">
+            <div>
+              <h2 className="text-xl font-display font-semibold text-ink">In Review</h2>
+              <p className="text-xs text-ink-3">
+                Versions awaiting approval or that were rejected.
+              </p>
+            </div>
+          </div>
+          <div className="space-y-4">
+            {pendingVersions.length > 0 && (
+              <div className="border border-line rounded-lg divide-y divide-line">
+                <div className="px-4 py-2 text-xs font-semibold text-ink bg-wash/50">
+                  Pending ({pendingVersions.length})
+                </div>
+                {pendingVersions.map((item, idx) => (
+                  <div
+                    key={`${item.extension.namespace}/${item.extension.id}/${item.version.version}-${idx}`}
+                    className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-ink">
+                          {item.extension.name} v{item.version.version}
+                        </span>
+                        <span className="chip bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800 text-micro">
+                          pending
+                        </span>
+                      </div>
+                      <div className="font-mono text-meta text-ink-3">
+                        @{item.extension.namespace}/{item.extension.id}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() =>
+                        onNavigate(
+                          `ext/${item.extension.namespace}/${item.extension.id}?version=${item.version.version}`,
+                        )
+                      }
+                      className="btn btn-secondary btn-sm"
+                    >
+                      View
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {rejectedVersions.length > 0 && (
+              <div className="border border-line rounded-lg divide-y divide-line">
+                <div className="px-4 py-2 text-xs font-semibold text-ink bg-wash/50">
+                  Rejected ({rejectedVersions.length})
+                </div>
+                {rejectedVersions.map((item, idx) => (
+                  <div
+                    key={`${item.extension.namespace}/${item.extension.id}/${item.version.version}-${idx}`}
+                    className="p-4 flex flex-col gap-2"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-ink">
+                            {item.extension.name} v{item.version.version}
+                          </span>
+                          <span className="chip bg-rose-50 dark:bg-rose-950 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800 text-micro">
+                            rejected
+                          </span>
+                        </div>
+                        <div className="font-mono text-meta text-ink-3">
+                          @{item.extension.namespace}/{item.extension.id}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() =>
+                          onNavigate(
+                            `ext/${item.extension.namespace}/${item.extension.id}?version=${item.version.version}`,
+                          )
+                        }
+                        className="btn btn-secondary btn-sm"
+                      >
+                        View
+                      </button>
+                    </div>
+                    {item.version.rejectionReason && (
+                      <div className="text-xs text-ink-2 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded p-2">
+                        {item.version.rejectionReason}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Webhooks are per-extension, so they are surfaced here per extension. */}
       {userExtensions.length > 0 && (
