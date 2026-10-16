@@ -201,6 +201,16 @@ export const ExtensionDetailPage: React.FC<ExtensionDetailPageProps> = ({
     };
   }, [namespace, id, record]);
 
+  useEffect(() => {
+    if (!extension) return;
+    const params = new URLSearchParams(window.location.search);
+    const v = params.get('version');
+    if (v) {
+      void handleToggleVersion(v);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extension]);
+
   const ownerNamespace = extension?.namespace || namespace;
   const authorNamespace =
     typeof extension?.author === 'object' && extension.author !== null
@@ -264,7 +274,22 @@ export const ExtensionDetailPage: React.FC<ExtensionDetailPageProps> = ({
     if (expandedVersion === version) {
       setExpandedVersion(null);
       versionRequestRef.current = null;
+      const params = new URLSearchParams(window.location.search);
+      if (params.has('version')) {
+        params.delete('version');
+        const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`;
+        window.history.replaceState(null, '', next);
+      }
       return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('version') !== version) {
+      params.set('version', version);
+      window.history.replaceState(
+        null,
+        '',
+        `${window.location.pathname}?${params.toString()}`,
+      );
     }
     setExpandedVersion(version);
     setVersionDetail(null);
@@ -720,6 +745,12 @@ export const ExtensionDetailPage: React.FC<ExtensionDetailPageProps> = ({
                             <span>{ver.deprecation}</span>
                           </p>
                         )}
+                        {typeof ver.downloads === 'number' && (
+                          <p className="text-meta text-ink-3 flex items-center gap-1">
+                            <Icon name="download" className="icon-xs" />
+                            {ver.downloads.toLocaleString()} downloads
+                          </p>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-3 shrink-0">
@@ -805,6 +836,14 @@ export const ExtensionDetailPage: React.FC<ExtensionDetailPageProps> = ({
                                     Created:{' '}
                                     <strong className="text-ink-2">
                                       {new Date(versionDetail.createdAt).toLocaleString()}
+                                    </strong>
+                                  </span>
+                                )}
+                                {typeof versionDetail.downloads === 'number' && (
+                                  <span className="text-ink-3">
+                                    Downloads:{' '}
+                                    <strong className="text-ink-2">
+                                      {versionDetail.downloads.toLocaleString()}
                                     </strong>
                                   </span>
                                 )}

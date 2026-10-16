@@ -35,6 +35,7 @@ import {
   VersionInfo,
   Webhook,
   WebhookCreated,
+  WebhookDelivery,
 } from '../types/api';
 
 const STORAGE_KEY_TOKEN = 'twexthub_auth_token';
@@ -458,6 +459,33 @@ class ApiService {
     );
   }
 
+  async getWebhookDeliveries(
+    namespace: string,
+    id: string,
+    webhookId: number,
+    params?: { cursor?: string; limit?: number },
+  ): Promise<PaginatedList<WebhookDelivery>> {
+    const query = new URLSearchParams();
+    if (params?.cursor) query.set('cursor', params.cursor);
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString();
+    return this.request<PaginatedList<WebhookDelivery>>(
+      `/@${encodeURIComponent(namespace)}/${encodeURIComponent(id)}/webhooks/${webhookId}/deliveries${qs ? `?${qs}` : ''}`,
+    );
+  }
+
+  async redeliverWebhook(
+    namespace: string,
+    id: string,
+    webhookId: number,
+    deliveryId: number,
+  ): Promise<WebhookDelivery> {
+    return this.request<WebhookDelivery>(
+      `/@${encodeURIComponent(namespace)}/${encodeURIComponent(id)}/webhooks/${webhookId}/deliveries/${deliveryId}/redeliver`,
+      { method: 'POST' },
+    );
+  }
+
   /** A non-null message marks the version deprecated; `null` clears it. */
   async deprecateVersion(
     namespace: string,
@@ -492,6 +520,53 @@ class ApiService {
 
   async getUser(namespace: string): Promise<User> {
     return this.request<User>(`/users/${encodeURIComponent(namespace)}`);
+  }
+
+  async getUserWebhooks(namespace: string): Promise<Webhook[]> {
+    const res = await this.request<{ data: Webhook[] }>(`/users/${encodeURIComponent(namespace)}/webhooks`);
+    return this.normalizeRows<Webhook>(res.data);
+  }
+
+  async createUserWebhook(
+    namespace: string,
+    payload: CreateWebhookPayload,
+  ): Promise<WebhookCreated> {
+    const created = await this.request<WebhookCreated>(`/users/${encodeURIComponent(namespace)}/webhooks`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return this.normalizeRow<WebhookCreated>(created);
+  }
+
+  async deleteUserWebhook(namespace: string, webhookId: number): Promise<void> {
+    await this.request<void>(`/users/${encodeURIComponent(namespace)}/webhooks/${webhookId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getUserWebhookDeliveries(
+    namespace: string,
+    webhookId: number,
+    params?: { cursor?: string; limit?: number },
+  ): Promise<PaginatedList<WebhookDelivery>> {
+    const query = new URLSearchParams();
+    if (params?.cursor) query.set('cursor', params.cursor);
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString();
+    return this.request<PaginatedList<WebhookDelivery>>(
+      `/users/${encodeURIComponent(namespace)}/webhooks/${webhookId}/deliveries${qs ? `?${qs}` : ''}`,
+    );
+  }
+
+  async redeliverUserWebhook(
+    namespace: string,
+    webhookId: number,
+    deliveryId: number,
+  ): Promise<WebhookDelivery> {
+    return this.request<WebhookDelivery>(
+      `/users/${encodeURIComponent(namespace)}/webhooks/${webhookId}/deliveries/${deliveryId}/redeliver`,
+      { method: 'POST' },
+    );
   }
 
   // --- Organizations ---
@@ -613,6 +688,31 @@ class ApiService {
     await this.request<void>(`/orgs/${encodeURIComponent(namespace)}/webhooks/${webhookId}`, {
       method: 'DELETE',
     });
+  }
+
+  async getOrganizationWebhookDeliveries(
+    namespace: string,
+    webhookId: number,
+    params?: { cursor?: string; limit?: number },
+  ): Promise<PaginatedList<WebhookDelivery>> {
+    const query = new URLSearchParams();
+    if (params?.cursor) query.set('cursor', params.cursor);
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString();
+    return this.request<PaginatedList<WebhookDelivery>>(
+      `/orgs/${encodeURIComponent(namespace)}/webhooks/${webhookId}/deliveries${qs ? `?${qs}` : ''}`,
+    );
+  }
+
+  async redeliverOrganizationWebhook(
+    namespace: string,
+    webhookId: number,
+    deliveryId: number,
+  ): Promise<WebhookDelivery> {
+    return this.request<WebhookDelivery>(
+      `/orgs/${encodeURIComponent(namespace)}/webhooks/${webhookId}/deliveries/${deliveryId}/redeliver`,
+      { method: 'POST' },
+    );
   }
 
   /**
@@ -866,6 +966,21 @@ class ApiService {
           Accept: 'text/javascript, application/javascript, */*',
         },
       },
+    );
+  }
+
+  async getExtensionVersions(
+    namespace: string,
+    id: string,
+    params?: { status?: string; cursor?: string; limit?: number },
+  ): Promise<PaginatedList<VersionInfo>> {
+    const query = new URLSearchParams();
+    if (params?.status) query.set('status', params.status);
+    if (params?.cursor) query.set('cursor', params.cursor);
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString();
+    return this.request<PaginatedList<VersionInfo>>(
+      `/@${encodeURIComponent(namespace)}/${encodeURIComponent(id)}/versions${qs ? `?${qs}` : ''}`,
     );
   }
 

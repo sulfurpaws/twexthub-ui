@@ -98,9 +98,10 @@ export const makePendingVersion = (overrides: Partial<PendingVersion> = {}): Pen
   version: '1.0.0',
   status: 'pending',
   name: 'Demo Extension',
-  license: 'Apache-2.0',
-  description: 'A version awaiting review.',
-  createdAt: '2026-02-01T00:00:00Z',
+  license: 'MIT',
+  description: 'A test extension.',
+  createdAt: '2026-01-01T00:00:00Z',
+  downloads: 0,
   ...overrides,
 });
 

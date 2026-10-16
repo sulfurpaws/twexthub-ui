@@ -19,7 +19,8 @@ beforeEach(() => {
     license: 'MIT',
     description: '',
     createdAt: '2026-01-01T00:00:00Z',
-    deprecation: 'Use 2.x instead.',
+    deprecation: 'This version is buggy.',
+    downloads: 0,
   });
 });
 

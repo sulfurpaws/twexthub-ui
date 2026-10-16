@@ -145,6 +145,8 @@ export interface ExtensionVersion {
   downloadUrl?: string;
   /** Present only while the version is `deprecated`. */
   deprecation?: string | null;
+  downloads?: number;
+  rejectionReason?: string | null;
 }
 
 export interface Extension {
@@ -187,6 +189,7 @@ export interface ExtensionSummary {
   version: string;
   description: string;
   publishedAt: string;
+  downloads?: number;
 }
 
 export interface InstanceStats {
@@ -274,6 +277,9 @@ export interface VersionInfo {
   createdAt: string;
   publishedAt?: string;
   deprecation?: string | null;
+  rejectionReason?: string | null;
+  warnings?: string[];
+  downloads: number;
   dist?: {
     downloadUrl: string;
     digest?: string;
@@ -334,6 +340,26 @@ export interface Webhook {
   lastDeliveryStatus?: string | null;
   lastDeliveryAt?: string | null;
   createdAt: string;
+}
+
+export type WebhookDeliveryStatus =
+  | 'pending'
+  | 'delivering'
+  | 'retrying'
+  | 'delivered'
+  | 'failed';
+
+export interface WebhookDelivery {
+  id: number;
+  event: WebhookEvent;
+  payload: unknown;
+  attempt: number;
+  maxAttempts: number;
+  status: WebhookDeliveryStatus;
+  nextAttemptAt?: string | null;
+  lastError?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface WebhookCreated extends Webhook {
