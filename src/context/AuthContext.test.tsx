@@ -4,7 +4,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AuthProvider, useAuth } from './AuthContext';
 import { api, ApiError } from '../services/api';
-import { AuthSessionResponse } from '../types/api';
+import { AuthSessionResponse, User } from '../types/api';
 import { makeSession, makeUser } from '../test/testUtils';
 
 vi.mock('../services/api');
@@ -13,10 +13,12 @@ const apiMock = vi.mocked(api);
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((res) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
     resolve = res;
+    reject = rej;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 function Probe() {
@@ -293,10 +295,38 @@ describe('AuthContext', () => {
     });
     await waitFor(() => expect(screen.getByTestId('token')).toHaveTextContent('tok-oidc'));
 
-    // When the cleanup finishes it must not tear down that session.
+    // When the cleanup finishes it must not tear down that session. The
+    // restore branch is the only caller of setToken with the OIDC token, so
+    // waiting on it confirms signOut has resumed past its await.
     logoutCall.resolve();
-    await waitFor(() => expect(screen.getByTestId('token')).toHaveTextContent('tok-oidc'));
+    await waitFor(() => expect(apiMock.setToken).toHaveBeenCalledWith('tok-oidc'));
+    expect(screen.getByTestId('token')).toHaveTextContent('tok-oidc');
     expect(apiMock.setToken).not.toHaveBeenCalledWith(null);
+  });
+
+  it('does not let a stale getMe 401 tear down a session that replaced the token', async () => {
+    localStorage.setItem('twexthub_auth_token', 'tok-old');
+    localStorage.setItem('twexthub_auth_user', JSON.stringify(makeUser()));
+    const me = deferred<User>();
+    apiMock.getMe.mockReturnValue(me.promise);
+    // The real api.login persists the token; mirror that so getToken() observes it.
+    apiMock.login.mockImplementation(async () => {
+      localStorage.setItem('twexthub_auth_token', 'tok-login');
+      return { user: makeUser(), token: 'tok-login', session: makeSession() };
+    });
+
+    renderProbe();
+    await waitFor(() => expect(apiMock.getMe).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole('button', { name: 'login' }));
+    await waitFor(() => expect(screen.getByTestId('token')).toHaveTextContent('tok-login'));
+
+    // The in-flight /me request was issued for the old token and fails only
+    // after the login replaced it.
+    me.reject(new ApiError('Unauthorized', 401));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.getByTestId('token')).toHaveTextContent('tok-login');
+    expect(apiMock.logout).not.toHaveBeenCalled();
   });
 
   it('lets a password login outrank a superseded OIDC exchange', async () => {

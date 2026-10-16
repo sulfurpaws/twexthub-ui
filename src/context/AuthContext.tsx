@@ -145,7 +145,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         // 401 Unauthorized, 403 Forbidden, 404 User Not Found indicate invalid or revoked token
-        if (err.status === 401 || err.status === 403 || err.status === 404) {
+        // Only tear the session down if the same token is still current; a
+        // login that replaced it while the request was in flight owns the
+        // session now and must not be invalidated by this stale response.
+        if (
+          (err.status === 401 || err.status === 403 || err.status === 404) &&
+          api.getToken() === currentToken
+        ) {
           await signOut(false);
         }
       }
