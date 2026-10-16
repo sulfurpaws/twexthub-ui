@@ -69,6 +69,28 @@ export const api = {
   getOrganizationWebhooks: vi.fn(),
   createOrganizationWebhook: vi.fn(),
   deleteOrganizationWebhook: vi.fn(),
+  getOrganizationWebhookDeliveries: vi.fn(async () => ({
+    data: [],
+    pagination: { nextCursor: null, hasMore: false },
+  })),
+  redeliverOrganizationWebhook: vi.fn(),
+  getUserWebhooks: vi.fn(),
+  createUserWebhook: vi.fn(),
+  deleteUserWebhook: vi.fn(),
+  getUserWebhookDeliveries: vi.fn(async () => ({
+    data: [],
+    pagination: { nextCursor: null, hasMore: false },
+  })),
+  redeliverUserWebhook: vi.fn(),
+  getWebhookDeliveries: vi.fn(async () => ({
+    data: [],
+    pagination: { nextCursor: null, hasMore: false },
+  })),
+  redeliverWebhook: vi.fn(),
+  getExtensionVersions: vi.fn(async () => ({
+    data: [],
+    pagination: { nextCursor: null, hasMore: false },
+  })),
   uploadOrganizationImage: vi.fn(),
   deleteOrganizationImage: vi.fn(),
   login: vi.fn(),

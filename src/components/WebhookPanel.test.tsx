@@ -213,6 +213,58 @@ describe('WebhookPanel active state', () => {
     );
   });
 
+  it('opens the delivery log for a webhook', async () => {
+    apiMock.getWebhooks.mockResolvedValue([makeHook({ id: 7 })]);
+    apiMock.getWebhookDeliveries.mockResolvedValue({
+      data: [
+        {
+          id: 21,
+          event: 'version.published',
+          payload: {},
+          attempt: 1,
+          maxAttempts: 5,
+          status: 'failed',
+          lastError: 'connection refused',
+          createdAt: '2026-03-02T10:00:00Z',
+          updatedAt: '2026-03-02T10:00:00Z',
+        },
+      ],
+      pagination: { nextCursor: null, hasMore: false },
+    });
+    const user = userEvent.setup();
+    render(<WebhookPanel namespace="kane" id="demo" onClose={noop} />);
+
+    await user.click(await screen.findByRole('button', { name: /View deliveries/ }));
+
+    expect(await screen.findByText('connection refused')).toBeInTheDocument();
+    expect(apiMock.getWebhookDeliveries).toHaveBeenCalledWith('kane', 'demo', 7, {
+      cursor: undefined,
+    });
+  });
+
+  it('reads and writes the account list when it is an account', async () => {
+    const user = userEvent.setup();
+    apiMock.getUserWebhooks.mockResolvedValue([makeHook({ id: 14, url: 'https://me.example/wh' })]);
+    apiMock.createUserWebhook.mockResolvedValue({ ...makeHook({ id: 15 }), secret: 'whsec_user' });
+    render(<WebhookPanel namespace="kane" account onClose={noop} />);
+
+    expect(await screen.findByText('https://me.example/wh')).toBeInTheDocument();
+    expect(apiMock.getUserWebhooks).toHaveBeenCalledWith('kane');
+    expect(apiMock.getWebhooks).not.toHaveBeenCalled();
+
+    await user.type(screen.getByLabelText('Webhook URL'), 'https://u.example/hook');
+    await user.click(screen.getByRole('checkbox', { name: 'Version published' }));
+    await user.click(screen.getByRole('button', { name: /Create webhook/ }));
+
+    await waitFor(() =>
+      expect(apiMock.createUserWebhook).toHaveBeenCalledWith('kane', {
+        url: 'https://u.example/hook',
+        events: ['version.published'],
+        active: true,
+      }),
+    );
+  });
+
   it('reads and writes the namespace list when it is an organization', async () => {
     const user = userEvent.setup();
     apiMock.getOrganizationWebhooks.mockResolvedValue([
