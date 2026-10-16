@@ -74,6 +74,15 @@ export const api = {
   login: vi.fn(),
   signup: vi.fn(),
   logout: vi.fn(),
+  getAuthDescriptor: vi.fn(async () => ({ passwordAuth: true, oidc: null })),
+  getOidcAuthorizeUrl: vi.fn((returnTo?: string) => {
+    const qs = returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : '';
+    return `/api/v2/auth/oidc/authorize${qs}`;
+  }),
+  exchangeOidcCode: vi.fn(),
+  linkOidc: vi.fn(),
+  getOidcIdentities: vi.fn(),
+  deleteOidcIdentity: vi.fn(),
   getMe: vi.fn(),
   acceptTerms: vi.fn(),
   updateUser: vi.fn(),

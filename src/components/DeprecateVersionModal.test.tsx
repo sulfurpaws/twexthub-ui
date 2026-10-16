@@ -10,7 +10,7 @@ vi.mock('../services/api');
 const apiMock = vi.mocked(api);
 
 beforeEach(() => {
-  apiMock.deprecateVersion.mockResolvedValue({
+  apiMock.deprecateVersion.mockImplementation(async (_namespace, _id, _version, message) => ({
     namespace: 'kane',
     id: 'demo',
     version: '1.0.0',
@@ -19,9 +19,9 @@ beforeEach(() => {
     license: 'MIT',
     description: '',
     createdAt: '2026-01-01T00:00:00Z',
-    deprecation: 'This version is buggy.',
+    deprecation: message,
     downloads: 0,
-  });
+  }));
 });
 
 const renderModal = (onSaved = vi.fn()) => {
