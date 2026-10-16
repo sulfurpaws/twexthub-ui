@@ -342,12 +342,7 @@ export interface Webhook {
   createdAt: string;
 }
 
-export type WebhookDeliveryStatus =
-  | 'pending'
-  | 'delivering'
-  | 'retrying'
-  | 'delivered'
-  | 'failed';
+export type WebhookDeliveryStatus = 'pending' | 'delivering' | 'retrying' | 'delivered' | 'failed';
 
 export interface WebhookDelivery {
   id: number;

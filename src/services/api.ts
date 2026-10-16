@@ -523,7 +523,9 @@ class ApiService {
   }
 
   async getUserWebhooks(namespace: string): Promise<Webhook[]> {
-    const res = await this.request<{ data: Webhook[] }>(`/users/${encodeURIComponent(namespace)}/webhooks`);
+    const res = await this.request<{ data: Webhook[] }>(
+      `/users/${encodeURIComponent(namespace)}/webhooks`,
+    );
     return this.normalizeRows<Webhook>(res.data);
   }
 
@@ -531,10 +533,13 @@ class ApiService {
     namespace: string,
     payload: CreateWebhookPayload,
   ): Promise<WebhookCreated> {
-    const created = await this.request<WebhookCreated>(`/users/${encodeURIComponent(namespace)}/webhooks`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
+    const created = await this.request<WebhookCreated>(
+      `/users/${encodeURIComponent(namespace)}/webhooks`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+    );
     return this.normalizeRow<WebhookCreated>(created);
   }
 

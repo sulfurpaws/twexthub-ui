@@ -22,7 +22,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const [webhooksFor, setWebhooksFor] = useState<{ namespace: string; id: string } | null>(null);
   const [pendingVersions, setPendingVersions] = useState<PendingVersionItem[]>([]);
   const [rejectedVersions, setRejectedVersions] = useState<PendingVersionItem[]>([]);
-  const [loadingPending, setLoadingPending] = useState(false);
+  const [_loadingPending, setLoadingPending] = useState(false);
 
   const loadUserExtensions = useCallback(async () => {
     if (!user) return;

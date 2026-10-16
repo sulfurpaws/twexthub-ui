@@ -285,11 +285,7 @@ export const ExtensionDetailPage: React.FC<ExtensionDetailPageProps> = ({
     const params = new URLSearchParams(window.location.search);
     if (params.get('version') !== version) {
       params.set('version', version);
-      window.history.replaceState(
-        null,
-        '',
-        `${window.location.pathname}?${params.toString()}`,
-      );
+      window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
     }
     setExpandedVersion(version);
     setVersionDetail(null);
