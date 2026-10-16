@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { ApiError } from '../services/api';
+import { api, ApiError } from '../services/api';
+import { useAuthDescriptor, useOidcCallback } from '../hooks/useOidc';
 import { BrandLogo } from '../components/BrandLogo';
 import { Icon } from '../components/Icon';
 
@@ -10,12 +11,25 @@ interface SignupPageProps {
 
 export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate }) => {
   const { signup, acceptCurrentTerms, latestTermsVersion, hasTerms } = useAuth();
+  const { descriptor, loading: loadingOptions } = useAuthDescriptor();
   const [namespace, setNamespace] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
   const [agreeTerms, setAgreeTerms] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const oidc = descriptor?.oidc ?? null;
+  const passwordAuth = descriptor?.passwordAuth ?? true;
+
+  useOidcCallback({
+    onSignedIn: () => onNavigate('dashboard'),
+    onError: (message) => setError(message),
+  });
+
+  const handleOidcSignup = () => {
+    window.location.assign(api.getOidcAuthorizeUrl('/signup'));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,6 +98,28 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate }) => {
           </div>
         )}
 
+        {oidc && (
+          <div className="space-y-3">
+            <button
+              type="button"
+              onClick={handleOidcSignup}
+              disabled={loadingOptions}
+              className="btn btn-secondary w-full py-2.5 text-sm disabled:opacity-50"
+            >
+              <Icon name="shield" />
+              <span>Sign up with identity provider</span>
+            </button>
+            {passwordAuth && (
+              <div className="flex items-center gap-3 text-micro uppercase tracking-wider text-ink-3">
+                <span className="h-px flex-1 bg-line" />
+                or
+                <span className="h-px flex-1 bg-line" />
+              </div>
+            )}
+          </div>
+        )}
+
+        {passwordAuth && (
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="signup-namespace" className="label block mb-1.5">
@@ -180,7 +216,9 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate }) => {
             <span>{loading ? 'Creating account...' : 'Create account'}</span>
           </button>
         </form>
+        )}
 
+        {passwordAuth && (
         <div className="pt-4 border-t border-line text-center">
           <p className="text-sm text-ink-2">
             Already have an account?{' '}
@@ -192,6 +230,20 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate }) => {
             </button>
           </p>
         </div>
+        )}
+        {!passwordAuth && oidc && (
+          <div className="pt-4 border-t border-line text-center">
+            <p className="text-sm text-ink-2">
+              Already have an account?{' '}
+              <button
+                onClick={() => onNavigate('login')}
+                className="text-lilac-700 dark:text-lilac-300 font-semibold hover:underline underline-offset-4 inline-flex items-center gap-0.5"
+              >
+                Sign in <Icon name="arrow_forward" className="icon-xs" />
+              </button>
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

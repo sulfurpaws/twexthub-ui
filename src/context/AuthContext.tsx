@@ -17,6 +17,8 @@ interface AuthContextType {
   hasAcceptedCurrentTerms: boolean;
   login: (namespace: string, password: string) => Promise<void>;
   signup: (namespace: string, password: string, displayName?: string) => Promise<void>;
+  /** Redeems the provider's one-time code and adopts the resulting session. */
+  completeOidcLogin: (code: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   acceptCurrentTerms: (version?: number) => Promise<void>;
@@ -168,6 +170,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await fetchTermsVersion();
   };
 
+  const completeOidcLogin = async (code: string) => {
+    const res = await api.exchangeOidcCode(code);
+    setUser(res.user);
+    setToken(res.token);
+    await fetchTermsVersion();
+  };
+
   const acceptCurrentTerms = async (version?: number) => {
     // Callers may pin the version they displayed (e.g. the terms page passes
     // the version it rendered); otherwise fall back to the context's copy.
@@ -218,6 +227,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         hasAcceptedCurrentTerms,
         login,
         signup,
+        completeOidcLogin,
         logout,
         refreshUser,
         acceptCurrentTerms,
