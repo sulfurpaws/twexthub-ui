@@ -342,6 +342,18 @@ export interface AuthDescriptor {
   oidc: OidcProviderInfo | null;
 }
 
+export interface OidcIdentity {
+  id: string;
+  issuer: string;
+  subject: string;
+  email: string | null;
+  createdAt: string;
+}
+
+export interface OidcLinkResult {
+  authorizationUrl: string;
+}
+
 export interface Webhook {
   id: number;
   url: string;

@@ -15,6 +15,8 @@ import {
   MarkNotificationsReadResult,
   Meta,
   NotificationList,
+  OidcIdentity,
+  OidcLinkResult,
   Organization,
   OrganizationOwner,
   PaginatedList,
@@ -792,6 +794,51 @@ class ApiService {
       this.setToken(null);
       this.setStoredUser(null);
     }
+  }
+
+  // --- OpenID Connect (identity provider) ---
+
+  /**
+   * Where the browser should go to start a sign-in through the provider. This
+   * is a top-level navigation, not a fetch: the API answers with a redirect to
+   * the provider, and the callback later sends the browser back to `returnTo`
+   * carrying a one-time `oidc_code` (or `oidc_error`).
+   */
+  getOidcAuthorizeUrl(returnTo?: string): string {
+    const query = new URLSearchParams();
+    if (returnTo) query.set('returnTo', returnTo);
+    const qs = query.toString();
+    return `${this.getBaseUrl()}/auth/oidc/authorize${qs ? `?${qs}` : ''}`;
+  }
+
+  /** Trades the provider's one-time code for a session, and stores it. */
+  async exchangeOidcCode(code: string): Promise<AuthSessionResponse> {
+    const res = await this.request<AuthSessionResponse>('/auth/oidc/exchange', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+    this.setToken(res.token);
+    this.setStoredUser(res.user);
+    return res;
+  }
+
+  /** Starts the round-trip that links the provider to the signed-in account. */
+  async linkOidc(returnTo?: string): Promise<OidcLinkResult> {
+    return this.request<OidcLinkResult>('/auth/oidc/link', {
+      method: 'POST',
+      body: JSON.stringify(returnTo ? { returnTo } : {}),
+    });
+  }
+
+  async getOidcIdentities(): Promise<OidcIdentity[]> {
+    const res = await this.request<{ data: OidcIdentity[] }>('/auth/oidc/identities');
+    return res.data;
+  }
+
+  async deleteOidcIdentity(id: string): Promise<void> {
+    await this.request<void>(`/auth/oidc/identities/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
   }
 
   // GET /me - returns the caller's own authenticated account
