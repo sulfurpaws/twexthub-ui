@@ -28,6 +28,10 @@ interface WebhookPanelProps {
    */
   id?: string;
   organization?: boolean;
+  /**
+   * Account-level webhooks for the given namespace (user). Uses /users endpoints.
+   */
+  account?: boolean;
   onClose: () => void;
 }
 
@@ -35,6 +39,7 @@ export const WebhookPanel: React.FC<WebhookPanelProps> = ({
   namespace,
   id,
   organization = false,
+  account = false,
   onClose,
 }) => {
   const { confirm, confirmDialog } = useConfirm();
@@ -67,7 +72,9 @@ export const WebhookPanel: React.FC<WebhookPanelProps> = ({
       setWebhooks(
         organization
           ? await api.getOrganizationWebhooks(namespace)
-          : await api.getWebhooks(namespace, id as string),
+          : account
+            ? await api.getUserWebhooks(namespace)
+            : await api.getWebhooks(namespace, id as string),
       );
     } catch (err: unknown) {
       setError(err instanceof ApiError ? err.message : 'Failed to load webhooks');
@@ -97,11 +104,13 @@ export const WebhookPanel: React.FC<WebhookPanelProps> = ({
     try {
       const created = organization
         ? await api.createOrganizationWebhook(namespace, { url: url.trim(), events, active })
-        : await api.createWebhook(namespace, id as string, {
-            url: url.trim(),
-            events,
-            active,
-          });
+        : account
+          ? await api.createUserWebhook(namespace, { url: url.trim(), events, active })
+          : await api.createWebhook(namespace, id as string, {
+              url: url.trim(),
+              events,
+              active,
+            });
       setUrl('');
       setEvents([]);
       setActive(true);
@@ -138,6 +147,7 @@ export const WebhookPanel: React.FC<WebhookPanelProps> = ({
     setError(null);
     try {
       if (organization) await api.deleteOrganizationWebhook(namespace, hook.id);
+      else if (account) await api.deleteUserWebhook(namespace, hook.id);
       else await api.deleteWebhook(namespace, id as string, hook.id);
       setWebhooks((prev) => prev.filter((h) => h.id !== hook.id));
     } catch (err: unknown) {

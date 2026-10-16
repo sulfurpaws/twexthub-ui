@@ -13,6 +13,7 @@ import {
   UpdateUserPayload,
 } from '../types/api';
 import { Icon, IconName } from '../components/Icon';
+import { WebhookPanel } from '../components/WebhookPanel';
 
 /** Avatar/banner/website values are referenced by the registry, so they must be fetchable. */
 // Matches the registry's GitHub check: 1-39 characters, alphanumeric with inner
@@ -32,7 +33,7 @@ interface SettingsPageProps {
   onNavigate: (route: string) => void;
 }
 
-type SettingsTab = 'account' | 'sessions' | 'tokens';
+type SettingsTab = 'account' | 'sessions' | 'tokens' | 'webhooks';
 
 /**
  * The scopes an automation token can carry, in the order the API lists them.
@@ -57,6 +58,7 @@ const TABS: { id: SettingsTab; label: string; icon: IconName }[] = [
   { id: 'account', label: 'Account', icon: 'person' },
   { id: 'sessions', label: 'Sessions', icon: 'laptop' },
   { id: 'tokens', label: 'Access Tokens', icon: 'key' },
+  { id: 'webhooks', label: 'Webhooks', icon: 'webhook' },
 ];
 
 // Each section's heading is described once, next to the navigation entry it
@@ -74,6 +76,10 @@ const SECTION_HEADINGS: Record<SettingsTab, { title: string; blurb: string }> = 
   tokens: {
     title: 'Automation tokens',
     blurb: 'Credentials for tools that publish on your behalf, outside a browser.',
+  },
+  webhooks: {
+    title: 'Webhooks',
+    blurb: 'Account-level webhooks that watch all extensions under this namespace.',
   },
 };
 
@@ -145,6 +151,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
   const [editTokenName, setEditTokenName] = useState('');
   const [editTokenScopes, setEditTokenScopes] = useState<TokenScope[]>([]);
   const [savingToken, setSavingToken] = useState(false);
+  const [showAccountWebhooks, setShowAccountWebhooks] = useState(false);
 
   // The bearer token is an opaque secret unrelated to the `Session.id` (a DB row id),
   // so the current session can't be identified from the token directly. When the API
