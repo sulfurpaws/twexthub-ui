@@ -31,6 +31,11 @@ async function fetchAllPages<T>(
     cursor = res?.pagination?.hasMore ? res.pagination.nextCursor || undefined : undefined;
     guard += 1;
   } while (cursor && guard < 1000);
+  if (cursor) {
+    // The server kept handing back a cursor past the safety limit. Surfacing
+    // this beats returning a truncated list as though it were complete.
+    throw new Error('Too many pages of results to load.');
+  }
   return all;
 }
 
