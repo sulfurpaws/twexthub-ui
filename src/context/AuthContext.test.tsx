@@ -1,13 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { useEffect } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AuthProvider, useAuth } from './AuthContext';
 import { api, ApiError } from '../services/api';
+import { AuthSessionResponse } from '../types/api';
 import { makeSession, makeUser } from '../test/testUtils';
 
 vi.mock('../services/api');
 
 const apiMock = vi.mocked(api);
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
 
 function Probe() {
   const auth = useAuth();
@@ -24,6 +34,7 @@ function Probe() {
       <span data-testid="role">{auth.user?.role ?? 'none'}</span>
       <button onClick={() => auth.login('kane', 'password')}>login</button>
       <button onClick={() => auth.logout()}>logout</button>
+      <button onClick={() => auth.completeOidcLogin('one-time').catch(() => {})}>oidc</button>
       <button onClick={() => auth.acceptCurrentTerms().catch(() => {})}>accept</button>
     </div>
   );
@@ -33,6 +44,30 @@ function renderProbe() {
   return render(
     <AuthProvider>
       <Probe />
+    </AuthProvider>,
+  );
+}
+
+// Redeems a code on mount, the way the real callback page does, so the
+// sign-in starts in the child's effect before the provider's own init effect.
+function OidcProbe() {
+  const auth = useAuth();
+  useEffect(() => {
+    auth.completeOidcLogin('one-time').catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <div>
+      <span data-testid="token">{auth.token ?? 'null'}</span>
+      <span data-testid="auth">{String(auth.isAuthenticated)}</span>
+    </div>
+  );
+}
+
+function renderOidcProbe() {
+  return render(
+    <AuthProvider>
+      <OidcProbe />
     </AuthProvider>,
   );
 }
@@ -199,5 +234,92 @@ describe('AuthContext', () => {
     await userEvent.click(screen.getByRole('button', { name: 'accept' }));
     await waitFor(() => expect(screen.getByTestId('accepted')).toHaveTextContent('true'));
     expect(apiMock.acceptTerms).toHaveBeenCalledWith(3);
+  });
+
+  it('adopts the OIDC session when nothing newer has started', async () => {
+    apiMock.exchangeOidcCode.mockResolvedValue({
+      user: makeUser({ namespace: 'kane' }),
+      token: 'tok-oidc',
+      session: makeSession(),
+    });
+    renderProbe();
+    await userEvent.click(screen.getByRole('button', { name: 'oidc' }));
+    await waitFor(() => expect(screen.getByTestId('token')).toHaveTextContent('tok-oidc'));
+    expect(screen.getByTestId('user')).toHaveTextContent('kane');
+    expect(screen.getByTestId('auth')).toHaveTextContent('true');
+  });
+
+  it('does not let automatic session cleanup cancel an in-flight OIDC exchange', async () => {
+    // A stored-but-invalid token makes verifyAuth tear the session down on
+    // mount. That cleanup is not a user decision and must not outrank the
+    // sign-in landing in the same mount, which starts first (child effects run
+    // before the provider's).
+    localStorage.setItem('twexthub_auth_token', 'tok-expired');
+    localStorage.setItem('twexthub_auth_user', JSON.stringify(makeUser()));
+    apiMock.getMe.mockRejectedValue(new ApiError('Unauthorized', 401));
+    const oidc = deferred<AuthSessionResponse>();
+    apiMock.exchangeOidcCode.mockReturnValue(oidc.promise);
+
+    renderOidcProbe();
+    await waitFor(() => expect(screen.getByTestId('token')).toHaveTextContent('null'));
+    expect(apiMock.logout).toHaveBeenCalled();
+
+    oidc.resolve({
+      user: makeUser(),
+      token: 'tok-oidc',
+      session: makeSession(),
+    });
+    await waitFor(() => expect(screen.getByTestId('token')).toHaveTextContent('tok-oidc'));
+    expect(screen.getByTestId('auth')).toHaveTextContent('true');
+  });
+
+  it('lets a password login outrank a superseded OIDC exchange', async () => {
+    const oidc = deferred<AuthSessionResponse>();
+    apiMock.exchangeOidcCode.mockReturnValue(oidc.promise);
+    apiMock.login.mockResolvedValue({
+      user: makeUser(),
+      token: 'tok-login',
+      session: makeSession(),
+    });
+    renderProbe();
+
+    await userEvent.click(screen.getByRole('button', { name: 'oidc' }));
+    await userEvent.click(screen.getByRole('button', { name: 'login' }));
+    await waitFor(() => expect(screen.getByTestId('token')).toHaveTextContent('tok-login'));
+
+    // The identity-provider response lands afterwards and must undo the
+    // credentials it already persisted rather than replacing the newer login.
+    oidc.resolve({
+      user: makeUser({ namespace: 'late' }),
+      token: 'tok-oidc',
+      session: makeSession(),
+    });
+    await waitFor(() => expect(apiMock.setToken).toHaveBeenCalledWith('tok-login'));
+
+    expect(screen.getByTestId('token')).toHaveTextContent('tok-login');
+    expect(screen.getByTestId('user')).toHaveTextContent('kane');
+  });
+
+  it('keeps a sign-out after an in-flight OIDC exchange resolves', async () => {
+    const oidc = deferred<AuthSessionResponse>();
+    apiMock.exchangeOidcCode.mockReturnValue(oidc.promise);
+    apiMock.logout.mockResolvedValue(undefined);
+    renderProbe();
+
+    await userEvent.click(screen.getByRole('button', { name: 'oidc' }));
+    await userEvent.click(screen.getByRole('button', { name: 'logout' }));
+    await waitFor(() => expect(apiMock.logout).toHaveBeenCalled());
+
+    oidc.resolve({
+      user: makeUser({ namespace: 'late' }),
+      token: 'tok-oidc',
+      session: makeSession(),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.getByTestId('token')).toHaveTextContent('null');
+    expect(screen.getByTestId('user')).toHaveTextContent('null');
+    expect(screen.getByTestId('auth')).toHaveTextContent('false');
+    expect(apiMock.setToken).toHaveBeenLastCalledWith(null);
   });
 });
