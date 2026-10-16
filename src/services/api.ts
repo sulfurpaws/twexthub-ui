@@ -36,6 +36,7 @@ import {
   Webhook,
   WebhookCreated,
   WebhookDelivery,
+  AuthDescriptor,
 } from '../types/api';
 
 const STORAGE_KEY_TOKEN = 'twexthub_auth_token';
