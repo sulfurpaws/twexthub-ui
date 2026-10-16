@@ -273,6 +273,32 @@ describe('AuthContext', () => {
     expect(screen.getByTestId('auth')).toHaveTextContent('true');
   });
 
+  it('keeps a sign-in that settles while the invalid-session cleanup is in flight', async () => {
+    localStorage.setItem('twexthub_auth_token', 'tok-expired');
+    localStorage.setItem('twexthub_auth_user', JSON.stringify(makeUser()));
+    apiMock.getMe.mockRejectedValue(new ApiError('Unauthorized', 401));
+    const oidc = deferred<AuthSessionResponse>();
+    apiMock.exchangeOidcCode.mockReturnValue(oidc.promise);
+    const logoutCall = deferred<void>();
+    apiMock.logout.mockReturnValue(logoutCall.promise);
+
+    renderOidcProbe();
+    await waitFor(() => expect(apiMock.logout).toHaveBeenCalled());
+
+    // The sign-in lands while the cleanup's request is still in flight.
+    oidc.resolve({
+      user: makeUser(),
+      token: 'tok-oidc',
+      session: makeSession(),
+    });
+    await waitFor(() => expect(screen.getByTestId('token')).toHaveTextContent('tok-oidc'));
+
+    // When the cleanup finishes it must not tear down that session.
+    logoutCall.resolve();
+    await waitFor(() => expect(screen.getByTestId('token')).toHaveTextContent('tok-oidc'));
+    expect(apiMock.setToken).not.toHaveBeenCalledWith(null);
+  });
+
   it('lets a password login outrank a superseded OIDC exchange', async () => {
     const oidc = deferred<AuthSessionResponse>();
     apiMock.exchangeOidcCode.mockReturnValue(oidc.promise);

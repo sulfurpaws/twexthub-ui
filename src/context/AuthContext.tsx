@@ -90,15 +90,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (bump) {
       settledSessionRef.current = { token: null, user: null };
     }
+    // Remember which settled token this call set out to discard. A sign-in
+    // that was already underway can settle during the request without
+    // outranking it (it started earlier), so the token change is the signal
+    // that the session now belongs to that sign-in.
+    const discardedToken = settledSessionRef.current.token;
     try {
       await api.logout();
     } catch {
       // Ignore network errors on logout
     }
-    if (authAttemptRef.current !== attempt) {
-      // A newer sign-in outranks this sign-out; hand the session back to it
-      // rather than clobbering the credentials it just adopted.
-      const settled = settledSessionRef.current;
+    const settled = settledSessionRef.current;
+    if (authAttemptRef.current !== attempt || settled.token !== discardedToken) {
+      // A sign-in outranks this sign-out; hand the session back to it rather
+      // than clobbering the credentials it just adopted.
       api.setToken(settled.token);
       api.setStoredUser(settled.user);
       setUser(settled.user);
