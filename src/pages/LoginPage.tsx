@@ -52,7 +52,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   };
 
   const handleOidcSignIn = () => {
-    window.location.assign(api.getOidcAuthorizeUrl('/login'));
+    window.location.assign(api.getOidcAuthorizeUrl(`${window.location.origin}/login`));
   };
 
   return (

@@ -176,7 +176,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
   const handleLinkIdentity = useCallback(async () => {
     setLinkingIdentity(true);
     try {
-      const { authorizationUrl } = await api.linkOidc('/settings');
+      const { authorizationUrl } = await api.linkOidc(`${window.location.origin}/settings`);
       window.location.assign(authorizationUrl);
     } catch (err: unknown) {
       setLinkingIdentity(false);

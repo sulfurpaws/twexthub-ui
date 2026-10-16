@@ -28,7 +28,7 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate }) => {
   });
 
   const handleOidcSignup = () => {
-    window.location.assign(api.getOidcAuthorizeUrl('/signup'));
+    window.location.assign(api.getOidcAuthorizeUrl(`${window.location.origin}/signup`));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
