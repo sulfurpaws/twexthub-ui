@@ -4,8 +4,10 @@ import { useToast } from '../context/ToastContext';
 import { api, ApiError } from '../services/api';
 import { ImageUploadField } from '../components/ImageUploadField';
 import { useConfirm } from '../hooks/useConfirm';
+import { useAuthDescriptor, useOidcCallback } from '../hooks/useOidc';
 import {
   AutomationToken,
+  OidcIdentity,
   Pagination,
   ProfileImages,
   Session,
@@ -13,6 +15,7 @@ import {
   UpdateUserPayload,
 } from '../types/api';
 import { Icon, IconName } from '../components/Icon';
+import { WebhookPanel } from '../components/WebhookPanel';
 
 /** Avatar/banner/website values are referenced by the registry, so they must be fetchable. */
 // Matches the registry's GitHub check: 1-39 characters, alphanumeric with inner
@@ -32,7 +35,7 @@ interface SettingsPageProps {
   onNavigate: (route: string) => void;
 }
 
-type SettingsTab = 'account' | 'sessions' | 'tokens';
+type SettingsTab = 'account' | 'sessions' | 'tokens' | 'webhooks';
 
 /**
  * The scopes an automation token can carry, in the order the API lists them.
@@ -57,6 +60,7 @@ const TABS: { id: SettingsTab; label: string; icon: IconName }[] = [
   { id: 'account', label: 'Account', icon: 'person' },
   { id: 'sessions', label: 'Sessions', icon: 'laptop' },
   { id: 'tokens', label: 'Access Tokens', icon: 'key' },
+  { id: 'webhooks', label: 'Webhooks', icon: 'webhook' },
 ];
 
 // Each section's heading is described once, next to the navigation entry it
@@ -74,6 +78,10 @@ const SECTION_HEADINGS: Record<SettingsTab, { title: string; blurb: string }> = 
   tokens: {
     title: 'Automation tokens',
     blurb: 'Credentials for tools that publish on your behalf, outside a browser.',
+  },
+  webhooks: {
+    title: 'Webhooks',
+    blurb: 'Account-level webhooks that watch all extensions under this namespace.',
   },
 };
 
@@ -145,6 +153,82 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
   const [editTokenName, setEditTokenName] = useState('');
   const [editTokenScopes, setEditTokenScopes] = useState<TokenScope[]>([]);
   const [savingToken, setSavingToken] = useState(false);
+  const [showAccountWebhooks, setShowAccountWebhooks] = useState(false);
+
+  // Linked identity-provider accounts
+  const { descriptor } = useAuthDescriptor();
+  const [identities, setIdentities] = useState<OidcIdentity[]>([]);
+  const [loadingIdentities, setLoadingIdentities] = useState(true);
+  const [identitiesLoadFailed, setIdentitiesLoadFailed] = useState(false);
+  const [linkingIdentity, setLinkingIdentity] = useState(false);
+  const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
+  // Once the account signs in through the provider, the provider owns the
+  // password: linking another identity and changing a password both stop
+  // being offered.
+  const hasLinkedIdentity = identities.length > 0;
+  // An empty list only means "no password form" once the list has actually
+  // loaded; while it is in flight or has failed, the provider may well own the
+  // password, so the controls stay hidden rather than appear on a fallback.
+  const showPasswordControls = !loadingIdentities && !identitiesLoadFailed && !hasLinkedIdentity;
+
+  const loadIdentities = useCallback(async () => {
+    setLoadingIdentities(true);
+    setIdentitiesLoadFailed(false);
+    try {
+      setIdentities(await api.getOidcIdentities());
+    } catch {
+      setIdentitiesLoadFailed(true);
+      setIdentities([]);
+    } finally {
+      setLoadingIdentities(false);
+    }
+  }, []);
+
+  const handleLinkIdentity = useCallback(async () => {
+    setLinkingIdentity(true);
+    try {
+      const { authorizationUrl } = await api.linkOidc(`${window.location.origin}/settings`);
+      window.location.assign(authorizationUrl);
+    } catch (err: unknown) {
+      setLinkingIdentity(false);
+      toastError(err instanceof ApiError ? err.message : 'Could not start linking.');
+    }
+  }, [toastError]);
+
+  const handleUnlinkIdentity = useCallback(
+    async (identity: OidcIdentity) => {
+      const confirmed = await confirm({
+        title: 'Unlink identity',
+        message: `Unlink ${identity.email || identity.subject} from this account?`,
+        confirmLabel: 'Unlink',
+        variant: 'danger',
+      });
+      if (!confirmed) return;
+      setUnlinkingId(identity.id);
+      try {
+        await api.deleteOidcIdentity(identity.id);
+        setIdentities((prev) => prev.filter((i) => i.id !== identity.id));
+        toastSuccess('Identity unlinked.');
+      } catch (err: unknown) {
+        toastError(err instanceof ApiError ? err.message : 'Could not unlink the identity.');
+      } finally {
+        setUnlinkingId(null);
+      }
+    },
+    [confirm, toastError, toastSuccess],
+  );
+
+  useEffect(() => {
+    loadIdentities();
+  }, [loadIdentities]);
+
+  useOidcCallback({
+    onLinked: () => {
+      toastSuccess('Identity linked.');
+      loadIdentities();
+    },
+    onError: (message) => toastError(message),
+  });
 
   // The bearer token is an opaque secret unrelated to the `Session.id` (a DB row id),
   // so the current session can't be identified from the token directly. When the API
@@ -291,7 +375,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
         }
       }
 
-      if (newPassword.trim()) {
+      if (showPasswordControls && newPassword.trim()) {
         if (newPassword.length < 8) {
           throw new Error('New password must be at least 8 characters.');
         }
@@ -608,21 +692,23 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
                       />
                     </div>
 
-                    <div>
-                      <label htmlFor="settings-new-password" className="label block mb-1">
-                        New Password{' '}
-                        <span className="text-ink-3 normal-case">(leave blank to keep)</span>
-                      </label>
-                      <input
-                        id="settings-new-password"
-                        type="password"
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        placeholder="Minimum 8 characters"
-                        className="input"
-                        autoComplete="new-password"
-                      />
-                    </div>
+                    {showPasswordControls && (
+                      <div>
+                        <label htmlFor="settings-new-password" className="label block mb-1">
+                          New Password{' '}
+                          <span className="text-ink-3 normal-case">(leave blank to keep)</span>
+                        </label>
+                        <input
+                          id="settings-new-password"
+                          type="password"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          placeholder="Minimum 8 characters"
+                          className="input"
+                          autoComplete="new-password"
+                        />
+                      </div>
+                    )}
 
                     <div className="sm:col-span-2">
                       <label htmlFor="settings-bio" className="label block mb-1">
@@ -698,7 +784,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
                       round
                     />
 
-                    {newPassword.trim() && (
+                    {showPasswordControls && newPassword.trim() && (
                       <div className="sm:col-span-2">
                         <label htmlFor="settings-current-password" className="label block mb-1">
                           Current Password{' '}
@@ -727,6 +813,61 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
                     </button>
                   </div>
                 </form>
+              </div>
+
+              {/* Linked identities */}
+              <div className="card p-5 space-y-4">
+                <div className="flex items-center gap-2">
+                  <Icon name="shield" className="text-lilac-500 dark:text-lilac-300" />
+                  <h2 className="text-sm font-semibold text-ink">Linked identities</h2>
+                </div>
+                <p className="text-xs text-ink-2 leading-relaxed">
+                  Sign in to this account through your identity provider. Linking lets the provider
+                  confirm who you are alongside, or instead of, your password.
+                </p>
+
+                {loadingIdentities ? (
+                  <div className="h-12 bg-wash dark:bg-raised rounded animate-pulse" />
+                ) : identities.length > 0 ? (
+                  <div className="divide-y divide-line border border-line rounded-lg">
+                    {identities.map((identity) => (
+                      <div
+                        key={identity.id}
+                        className="p-3 flex items-center justify-between gap-3 text-xs bg-surface dark:bg-raised"
+                      >
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="font-mono text-ink truncate">
+                            {identity.email || identity.subject}
+                          </div>
+                          <div className="text-meta text-ink-3 truncate">
+                            {identity.issuer} • Linked{' '}
+                            {new Date(identity.createdAt).toLocaleDateString()}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleUnlinkIdentity(identity)}
+                          disabled={unlinkingId === identity.id}
+                          className="px-2.5 py-1 text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-900/60 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 shrink-0"
+                        >
+                          {unlinkingId === identity.id ? 'Unlinking...' : 'Unlink'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-ink-3">No identities linked yet.</p>
+                )}
+
+                {descriptor?.oidc && !hasLinkedIdentity && (
+                  <button
+                    onClick={handleLinkIdentity}
+                    disabled={linkingIdentity}
+                    className="btn btn-secondary btn-sm disabled:opacity-50"
+                  >
+                    <Icon name="link" className="icon-sm" />
+                    <span>{linkingIdentity ? 'Redirecting...' : 'Link identity provider'}</span>
+                  </button>
+                )}
               </div>
 
               {/* Danger zone */}
@@ -1112,8 +1253,41 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
               </div>
             </div>
           )}
+
+          {/* Webhooks Tab */}
+          {activeTab === 'webhooks' && (
+            <div className="space-y-6">
+              <div className="card p-5 space-y-3">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <h2 className="text-sm font-semibold text-ink">Account Webhooks</h2>
+                    <p className="text-xs text-ink-3 mt-1 max-w-xl">
+                      Account-level webhooks notify you when events occur for any extension in{' '}
+                      <span className="font-mono text-ink-2">@{user.namespace}</span>. These are
+                      separate from organization or per-extension webhooks.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowAccountWebhooks(true)}
+                    className="btn btn-secondary btn-sm"
+                  >
+                    <Icon name="webhook" className="icon-sm" />
+                    Manage webhooks
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      {showAccountWebhooks && (
+        <WebhookPanel
+          namespace={user.namespace}
+          account
+          onClose={() => setShowAccountWebhooks(false)}
+        />
+      )}
 
       {confirmDialog}
     </div>

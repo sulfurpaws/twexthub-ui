@@ -201,7 +201,7 @@ describe('SettingsPage', () => {
     const user = userEvent.setup();
     renderWithProviders(<SettingsPage onNavigate={noop} />);
 
-    await user.type(screen.getByPlaceholderText('Minimum 8 characters'), 'new-secret-1');
+    await user.type(await screen.findByPlaceholderText('Minimum 8 characters'), 'new-secret-1');
     await user.type(screen.getByPlaceholderText('Your existing password'), 'old-secret-1');
     await user.click(screen.getByRole('button', { name: 'Save Changes' }));
 
@@ -215,7 +215,7 @@ describe('SettingsPage', () => {
     const user = userEvent.setup();
     renderWithProviders(<SettingsPage onNavigate={noop} />);
 
-    await user.type(screen.getByPlaceholderText('Minimum 8 characters'), 'new-secret-1');
+    await user.type(await screen.findByPlaceholderText('Minimum 8 characters'), 'new-secret-1');
     await user.click(screen.getByRole('button', { name: 'Save Changes' }));
 
     expect(apiMock.updateUser).not.toHaveBeenCalled();
@@ -494,5 +494,39 @@ describe('SettingsPage v1 profile limits', () => {
     await save();
 
     await waitFor(() => expect(apiMock.updateUser).toHaveBeenCalledWith('kane', { github: 'k' }));
+  });
+
+  it('offers to link an identity provider when none is linked', async () => {
+    apiMock.getAuthDescriptor.mockResolvedValue({
+      passwordAuth: true,
+      oidc: { issuer: 'https://idp.example', required: false },
+    });
+    renderWithProviders(<SettingsPage onNavigate={noop} />);
+
+    expect(
+      await screen.findByRole('button', { name: /Link identity provider/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Minimum 8 characters')).toBeInTheDocument();
+  });
+
+  it('hides the link button and the password form once an identity is linked', async () => {
+    apiMock.getAuthDescriptor.mockResolvedValue({
+      passwordAuth: true,
+      oidc: { issuer: 'https://idp.example', required: false },
+    });
+    apiMock.getOidcIdentities.mockResolvedValue([
+      {
+        id: '1',
+        issuer: 'https://idp.example',
+        subject: 'subject-1',
+        email: 'kane@example.com',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    renderWithProviders(<SettingsPage onNavigate={noop} />);
+
+    expect(await screen.findByText('kane@example.com')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Link identity provider/ })).toBeNull();
+    expect(screen.queryByPlaceholderText('Minimum 8 characters')).toBeNull();
   });
 });

@@ -98,9 +98,10 @@ export const makePendingVersion = (overrides: Partial<PendingVersion> = {}): Pen
   version: '1.0.0',
   status: 'pending',
   name: 'Demo Extension',
-  license: 'Apache-2.0',
-  description: 'A version awaiting review.',
-  createdAt: '2026-02-01T00:00:00Z',
+  license: 'MIT',
+  description: 'A test extension.',
+  createdAt: '2026-01-01T00:00:00Z',
+  downloads: 0,
   ...overrides,
 });
 
@@ -169,6 +170,7 @@ export function makeAuthState(overrides: AuthOverrides = {}) {
   const logout = vi.fn(async () => {});
   const refreshUser = vi.fn(async () => {});
   const acceptCurrentTerms = vi.fn(async () => {});
+  const completeOidcLogin = vi.fn(async () => true);
 
   const hasUser = 'user' in overrides;
   const hasToken = 'token' in overrides;
@@ -187,6 +189,7 @@ export function makeAuthState(overrides: AuthOverrides = {}) {
     hasAcceptedCurrentTerms: overrides.hasAcceptedCurrentTerms ?? true,
     login,
     signup,
+    completeOidcLogin,
     logout,
     refreshUser,
     acceptCurrentTerms,

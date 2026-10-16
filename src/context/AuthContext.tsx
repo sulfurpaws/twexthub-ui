@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { api, ApiError } from '../services/api';
-import { User } from '../types/api';
+import { AuthSessionResponse, User } from '../types/api';
 
 interface AuthContextType {
   user: User | null;
@@ -17,6 +17,12 @@ interface AuthContextType {
   hasAcceptedCurrentTerms: boolean;
   login: (namespace: string, password: string) => Promise<void>;
   signup: (namespace: string, password: string, displayName?: string) => Promise<void>;
+  /**
+   * Redeems the provider's one-time code and adopts the resulting session.
+   * Resolves `false` when the exchange was superseded by a newer sign-in or
+   * sign-out, so callers do not treat it as a successful login.
+   */
+  completeOidcLogin: (code: string) => Promise<boolean>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   acceptCurrentTerms: (version?: number) => Promise<void>;
@@ -43,6 +49,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [hasTerms, setHasTerms] = useState(false);
   const [termsResolved, setTermsResolved] = useState(false);
   const isCheckingAuthRef = useRef(false);
+  // Sign-in and sign-out share one attempt counter. Every start bumps it, so a
+  // completion whose attempt has already been outrun is a leftover rather than
+  // the newest decision: it must roll the credentials it just persisted back to
+  // the session that actually settled. `api.login`/`exchangeOidcCode` persist to
+  // localStorage before this context ever sees the response, which is why the
+  // rollback has to write the storage back too.
+  const authAttemptRef = useRef(0);
+  const settledSessionRef = useRef<{ token: string | null; user: User | null }>({
+    token,
+    user,
+  });
 
   // Check latest terms version from API
   const fetchTermsVersion = useCallback(async () => {
@@ -67,18 +84,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  const logout = useCallback(async () => {
+  // Tears down the api layer, the local state, and the settled-session record.
+  // `bump` marks the call as a new decision, so any sign-in still in flight is
+  // outranked and its late response cannot resurrect the session. The automatic
+  // cleanup in `verifyAuth` passes false: an invalid token it discards must not
+  // cancel the sign-in that is about to replace it.
+  const signOut = useCallback(async (bump: boolean) => {
+    const attempt = bump ? ++authAttemptRef.current : authAttemptRef.current;
+    if (bump) {
+      settledSessionRef.current = { token: null, user: null };
+    }
+    // Remember which settled token this call set out to discard. A sign-in
+    // that was already underway can settle during the request without
+    // outranking it (it started earlier), so the token change is the signal
+    // that the session now belongs to that sign-in.
+    const discardedToken = settledSessionRef.current.token;
     try {
       await api.logout();
     } catch {
       // Ignore network errors on logout
-    } finally {
-      api.setToken(null);
-      api.setStoredUser(null);
-      setUser(null);
-      setToken(null);
     }
+    const settled = settledSessionRef.current;
+    if (authAttemptRef.current !== attempt || settled.token !== discardedToken) {
+      // A sign-in outranks this sign-out; hand the session back to it rather
+      // than clobbering the credentials it just adopted.
+      api.setToken(settled.token);
+      api.setStoredUser(settled.user);
+      setUser(settled.user);
+      setToken(settled.token);
+      return;
+    }
+    api.setToken(null);
+    api.setStoredUser(null);
+    settledSessionRef.current = { token: null, user: null };
+    setUser(null);
+    setToken(null);
   }, []);
+
+  const logout = useCallback(() => signOut(true), [signOut]);
 
   // Fetch GET /me every so often and log the user out if their token is invalid or missing.
   // Reads the token/user from the api layer (not React state) and bails out of `setUser` when the
@@ -88,7 +131,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const currentToken = api.getToken();
     if (!currentToken) {
       if (api.getStoredUser()) {
-        await logout();
+        await signOut(false);
       }
       return;
     }
@@ -106,14 +149,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         // 401 Unauthorized, 403 Forbidden, 404 User Not Found indicate invalid or revoked token
-        if (err.status === 401 || err.status === 403 || err.status === 404) {
-          await logout();
+        // Only tear the session down if the same token is still current; a
+        // login that replaced it while the request was in flight owns the
+        // session now and must not be invalidated by this stale response.
+        if (
+          (err.status === 401 || err.status === 403 || err.status === 404) &&
+          api.getToken() === currentToken
+        ) {
+          await signOut(false);
         }
       }
     } finally {
       isCheckingAuthRef.current = false;
     }
-  }, [logout]);
+  }, [signOut]);
 
   const refreshUser = useCallback(async () => {
     await verifyAuth();
@@ -154,18 +203,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [token, verifyAuth]);
 
-  const login = async (namespace: string, password: string) => {
-    const res = await api.login({ namespace, password });
+  // Adopts a sign-in only while its attempt is still the newest one, persisting
+  // the chosen credentials through the api layer before flipping React state so
+  // storage and state cannot disagree. A superseded completion undoes the
+  // persistence the api layer already did and restores the session that
+  // settled in its place.
+  const settleSignIn = (attempt: number, res: AuthSessionResponse): boolean => {
+    if (authAttemptRef.current !== attempt) {
+      const settled = settledSessionRef.current;
+      api.setToken(settled.token);
+      api.setStoredUser(settled.user);
+      setUser(settled.user);
+      setToken(settled.token);
+      return false;
+    }
+    api.setToken(res.token);
+    api.setStoredUser(res.user);
+    settledSessionRef.current = { token: res.token, user: res.user };
     setUser(res.user);
     setToken(res.token);
-    await fetchTermsVersion();
+    return true;
+  };
+
+  const login = async (namespace: string, password: string) => {
+    const attempt = ++authAttemptRef.current;
+    const res = await api.login({ namespace, password });
+    if (settleSignIn(attempt, res)) {
+      await fetchTermsVersion();
+    }
   };
 
   const signup = async (namespace: string, password: string, displayName?: string) => {
+    const attempt = ++authAttemptRef.current;
     const res = await api.signup({ namespace, password, displayName });
-    setUser(res.user);
-    setToken(res.token);
+    if (settleSignIn(attempt, res)) {
+      await fetchTermsVersion();
+    }
+  };
+
+  const completeOidcLogin = async (code: string): Promise<boolean> => {
+    const attempt = ++authAttemptRef.current;
+    const res = await api.exchangeOidcCode(code);
+    if (!settleSignIn(attempt, res)) {
+      // A newer sign-in or sign-out outranked this exchange; report the
+      // cancellation instead of resolving as a successful login.
+      return false;
+    }
     await fetchTermsVersion();
+    return true;
   };
 
   const acceptCurrentTerms = async (version?: number) => {
@@ -218,6 +303,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         hasAcceptedCurrentTerms,
         login,
         signup,
+        completeOidcLogin,
         logout,
         refreshUser,
         acceptCurrentTerms,

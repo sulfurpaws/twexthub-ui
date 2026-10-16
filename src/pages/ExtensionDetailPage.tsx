@@ -201,6 +201,22 @@ export const ExtensionDetailPage: React.FC<ExtensionDetailPageProps> = ({
     };
   }, [namespace, id, record]);
 
+  // The query string is read on every render rather than captured once, so a
+  // navigation that only changes `?version=` (same extension) still opens the
+  // newly selected version.
+  const queryVersion = new URLSearchParams(window.location.search).get('version');
+
+  useEffect(() => {
+    if (!extension) return;
+    // Stay in sync with the URL: open the version it names, and collapse the
+    // expanded one when the param is gone (e.g. browser back).
+    if (queryVersion === expandedVersion) return;
+    const target = queryVersion ?? expandedVersion;
+    if (!target) return;
+    void handleToggleVersion(target);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extension, queryVersion, expandedVersion]);
+
   const ownerNamespace = extension?.namespace || namespace;
   const authorNamespace =
     typeof extension?.author === 'object' && extension.author !== null
@@ -260,13 +276,7 @@ export const ExtensionDetailPage: React.FC<ExtensionDetailPageProps> = ({
     }
   };
 
-  const handleToggleVersion = async (version: string) => {
-    if (expandedVersion === version) {
-      setExpandedVersion(null);
-      versionRequestRef.current = null;
-      return;
-    }
-    setExpandedVersion(version);
+  const loadVersionDetail = async (version: string) => {
     setVersionDetail(null);
     setVersionDetailError(null);
     setLoadingVersion(true);
@@ -287,6 +297,27 @@ export const ExtensionDetailPage: React.FC<ExtensionDetailPageProps> = ({
         setLoadingVersion(false);
       }
     }
+  };
+
+  const handleToggleVersion = async (version: string) => {
+    if (expandedVersion === version) {
+      setExpandedVersion(null);
+      versionRequestRef.current = null;
+      const params = new URLSearchParams(window.location.search);
+      if (params.has('version')) {
+        params.delete('version');
+        const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`;
+        window.history.replaceState(null, '', next);
+      }
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('version') !== version) {
+      params.set('version', version);
+      window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
+    }
+    setExpandedVersion(version);
+    await loadVersionDetail(version);
   };
 
   const handleYankVersion = async (version: string) => {
@@ -413,6 +444,90 @@ export const ExtensionDetailPage: React.FC<ExtensionDetailPageProps> = ({
     }
   };
 
+  // The metadata panel shared by a listed version row and the row for a fetched
+  // version the list does not carry (e.g. a pending one reached via `?version=`).
+  const renderVersionMetadata = (version: string) => (
+    <div className="px-4 pb-4">
+      <div className="border border-line rounded-lg bg-wash dark:bg-raised p-3 text-meta space-y-1.5">
+        {loadingVersion ? (
+          <p className="text-ink-3">Loading version metadata...</p>
+        ) : versionDetailError ? (
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-rose-700 dark:text-rose-400">{versionDetailError}</p>
+            <button
+              type="button"
+              onClick={() => void loadVersionDetail(version)}
+              className="btn btn-secondary btn-sm shrink-0"
+            >
+              Retry
+            </button>
+          </div>
+        ) : versionDetail ? (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+              <span className="text-ink-3">
+                Status: <strong className="text-ink-2 font-mono">{versionDetail.status}</strong>
+              </span>
+              {versionDetail.license && (
+                <span className="text-ink-3">
+                  License: <strong className="text-ink-2 font-mono">{versionDetail.license}</strong>
+                </span>
+              )}
+              {versionDetail.author && (
+                <span className="text-ink-3">
+                  Author: <strong className="text-ink-2">{versionDetail.author}</strong>
+                </span>
+              )}
+              {versionDetail.createdAt && (
+                <span className="text-ink-3">
+                  Created:{' '}
+                  <strong className="text-ink-2">
+                    {new Date(versionDetail.createdAt).toLocaleString()}
+                  </strong>
+                </span>
+              )}
+              {typeof versionDetail.downloads === 'number' && (
+                <span className="text-ink-3">
+                  Downloads:{' '}
+                  <strong className="text-ink-2">{versionDetail.downloads.toLocaleString()}</strong>
+                </span>
+              )}
+              {versionDetail.publishedAt && (
+                <span className="text-ink-3">
+                  Published:{' '}
+                  <strong className="text-ink-2">
+                    {new Date(versionDetail.publishedAt).toLocaleString()}
+                  </strong>
+                </span>
+              )}
+            </div>
+            {versionDetail.dist?.downloadUrl && (
+              <div className="pt-1">
+                <div className="text-ink-3 mb-1">Download URL</div>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 min-w-0 truncate text-ink bg-surface dark:bg-surface border border-line rounded px-2 py-1">
+                    {versionDetail.dist.downloadUrl}
+                  </code>
+                  <button
+                    onClick={() => handleCopy(versionDetail.dist!.downloadUrl)}
+                    className="btn btn-secondary btn-sm shrink-0"
+                  >
+                    {copiedUrl ? (
+                      <Icon name="check" className="icon-xs" />
+                    ) : (
+                      <Icon name="content_copy" className="icon-xs" />
+                    )}
+                    <span>Copy</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+
   if (loading) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-6">
@@ -450,6 +565,48 @@ export const ExtensionDetailPage: React.FC<ExtensionDetailPageProps> = ({
       owners.some((owner) => owner.namespace === user.namespace)),
   );
   const canManage = isOwner || isAdmin;
+
+  // A version reached through `?version=` may not be in the list the detail
+  // endpoint returns (pending/rejected versions are omitted), so it gets a row
+  // of its own unless a listed row already covers it. The row is keyed on the
+  // expanded version, not the fetched detail, so it stays visible while that
+  // version is loading or when the fetch fails.
+  const extraVersionId =
+    expandedVersion && !(extension.versions || []).some((v) => v.version === expandedVersion)
+      ? expandedVersion
+      : null;
+  const extraVersionDetail =
+    versionDetail && versionDetail.version === extraVersionId ? versionDetail : null;
+
+  const extraVersionRow = extraVersionId && (
+    <div key={extraVersionId} className="bg-surface dark:bg-raised">
+      <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-sm font-bold text-ink">v{extraVersionId}</span>
+            {extraVersionDetail && <StatusBadge status={extraVersionDetail.status} size="sm" />}
+          </div>
+          {extraVersionDetail?.rejectionReason && (
+            <p className="text-xs text-rose-700 dark:text-rose-400">
+              {extraVersionDetail.rejectionReason}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <button
+            onClick={() => handleToggleVersion(extraVersionId)}
+            title={`Show metadata for v${extraVersionId}`}
+            aria-label={`Metadata for v${extraVersionId}`}
+            aria-expanded={expandedVersion === extraVersionId}
+            className="p-1.5 text-ink-3 hover:text-lilac-700 dark:hover:text-lilac-300 rounded-md hover:bg-wash dark:hover:bg-raised transition-colors"
+          >
+            <Icon name="info" className="icon-sm" />
+          </button>
+        </div>
+      </div>
+      {expandedVersion === extraVersionId && renderVersionMetadata(extraVersionId)}
+    </div>
+  );
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -720,6 +877,12 @@ export const ExtensionDetailPage: React.FC<ExtensionDetailPageProps> = ({
                             <span>{ver.deprecation}</span>
                           </p>
                         )}
+                        {typeof ver.downloads === 'number' && (
+                          <p className="text-meta text-ink-3 flex items-center gap-1">
+                            <Icon name="download" className="icon-xs" />
+                            {ver.downloads.toLocaleString()} downloads
+                          </p>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-3 shrink-0">
@@ -770,81 +933,14 @@ export const ExtensionDetailPage: React.FC<ExtensionDetailPageProps> = ({
                       </div>
                     </div>
 
-                    {expandedVersion === ver.version && (
-                      <div className="px-4 pb-4">
-                        <div className="border border-line rounded-lg bg-wash dark:bg-raised p-3 text-meta space-y-1.5">
-                          {loadingVersion ? (
-                            <p className="text-ink-3">Loading version metadata...</p>
-                          ) : versionDetailError ? (
-                            <p className="text-rose-700 dark:text-rose-400">{versionDetailError}</p>
-                          ) : versionDetail ? (
-                            <>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
-                                <span className="text-ink-3">
-                                  Status:{' '}
-                                  <strong className="text-ink-2 font-mono">
-                                    {versionDetail.status}
-                                  </strong>
-                                </span>
-                                {versionDetail.license && (
-                                  <span className="text-ink-3">
-                                    License:{' '}
-                                    <strong className="text-ink-2 font-mono">
-                                      {versionDetail.license}
-                                    </strong>
-                                  </span>
-                                )}
-                                {versionDetail.author && (
-                                  <span className="text-ink-3">
-                                    Author:{' '}
-                                    <strong className="text-ink-2">{versionDetail.author}</strong>
-                                  </span>
-                                )}
-                                {versionDetail.createdAt && (
-                                  <span className="text-ink-3">
-                                    Created:{' '}
-                                    <strong className="text-ink-2">
-                                      {new Date(versionDetail.createdAt).toLocaleString()}
-                                    </strong>
-                                  </span>
-                                )}
-                                {versionDetail.publishedAt && (
-                                  <span className="text-ink-3">
-                                    Published:{' '}
-                                    <strong className="text-ink-2">
-                                      {new Date(versionDetail.publishedAt).toLocaleString()}
-                                    </strong>
-                                  </span>
-                                )}
-                              </div>
-                              {versionDetail.dist?.downloadUrl && (
-                                <div className="pt-1">
-                                  <div className="text-ink-3 mb-1">Download URL</div>
-                                  <div className="flex items-center gap-2">
-                                    <code className="flex-1 min-w-0 truncate text-ink bg-surface dark:bg-surface border border-line rounded px-2 py-1">
-                                      {versionDetail.dist.downloadUrl}
-                                    </code>
-                                    <button
-                                      onClick={() => handleCopy(versionDetail.dist!.downloadUrl)}
-                                      className="btn btn-secondary btn-sm shrink-0"
-                                    >
-                                      {copiedUrl ? (
-                                        <Icon name="check" className="icon-xs" />
-                                      ) : (
-                                        <Icon name="content_copy" className="icon-xs" />
-                                      )}
-                                      <span>Copy</span>
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                            </>
-                          ) : null}
-                        </div>
-                      </div>
-                    )}
+                    {expandedVersion === ver.version && renderVersionMetadata(ver.version)}
                   </div>
                 ))}
+                {extraVersionRow}
+              </div>
+            ) : extraVersionId ? (
+              <div className="divide-y divide-line border border-line rounded-lg">
+                {extraVersionRow}
               </div>
             ) : (
               <div className="p-4 border border-line rounded-lg flex items-center justify-between">

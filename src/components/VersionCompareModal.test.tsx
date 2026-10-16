@@ -19,6 +19,7 @@ beforeEach(() => {
     license: 'MIT',
     description: '',
     createdAt: '2026-01-01T00:00:00Z',
+    downloads: 0,
   }));
   apiMock.downloadVersion.mockImplementation(async (_ns, _id, version) =>
     version === '1.0.0' ? 'line one\nold line\n' : 'line one\nnew line\n',

@@ -62,7 +62,12 @@ const notificationRef = (notification: Notification) => {
   const namespace = notification.payload.namespace;
   if (typeof namespace !== 'string') return null;
   const id = notification.payload.id;
-  if (typeof id === 'string') return `ext/${namespace}/${id}`;
+  if (typeof id === 'string') {
+    const base = `ext/${namespace}/${id}`;
+    const version = notification.payload.version;
+    if (typeof version === 'string') return `${base}?version=${encodeURIComponent(version)}`;
+    return base;
+  }
   if (
     notification.kind === 'organization.owner.added' ||
     notification.kind === 'organization.owner.removed'

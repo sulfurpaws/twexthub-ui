@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ExtensionDetailPage } from './ExtensionDetailPage';
@@ -44,6 +44,10 @@ beforeEach(() => {
   apiMock.getUser.mockResolvedValue(makeUser({ namespace: 'kane', displayName: 'Kane' }));
   useAuthMock.mockReset();
   useAuthMock.mockReturnValue(makeAuthState());
+});
+
+afterEach(() => {
+  window.history.replaceState(null, '', '/');
 });
 
 describe('ExtensionDetailPage', () => {
@@ -468,6 +472,82 @@ describe('ExtensionDetailPage', () => {
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Retry transfers' })).toBeNull();
     expect(apiMock.getExtensionTransfers).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens a version named in the query string even when the list omits it', async () => {
+    window.history.replaceState(null, '', '/ext/kane/demo?version=2.0.0');
+    apiMock.getVersion.mockResolvedValue({
+      namespace: 'kane',
+      id: 'demo',
+      version: '2.0.0',
+      status: 'pending',
+      name: 'Demo Extension',
+      license: 'MIT',
+      description: 'A test extension.',
+      createdAt: '2026-03-01T00:00:00Z',
+      downloads: 0,
+      rejectionReason: 'Needs more tests.',
+    });
+    render(<ExtensionDetailPage namespace="kane" id="demo" onNavigate={noop} />);
+
+    await screen.findByRole('heading', { level: 1, name: 'Demo Extension' });
+    expect(await screen.findByText('Needs more tests.')).toBeInTheDocument();
+    expect(screen.getByText('v2.0.0')).toBeInTheDocument();
+    expect(apiMock.getVersion).toHaveBeenCalledWith('kane', 'demo', '2.0.0');
+  });
+
+  it('keeps the deep-linked version row and offers a retry when its metadata fails', async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, '', '/ext/kane/demo?version=2.0.0');
+    apiMock.getVersion
+      .mockRejectedValueOnce(new ApiError('Could not load version metadata', 500))
+      .mockResolvedValueOnce({
+        namespace: 'kane',
+        id: 'demo',
+        version: '2.0.0',
+        status: 'pending',
+        name: 'Demo Extension',
+        license: 'MIT',
+        description: 'A test extension.',
+        createdAt: '2026-03-01T00:00:00Z',
+        downloads: 0,
+      });
+    render(<ExtensionDetailPage namespace="kane" id="demo" onNavigate={noop} />);
+
+    await screen.findByRole('heading', { level: 1, name: 'Demo Extension' });
+    expect(await screen.findByText('Could not load version metadata')).toBeInTheDocument();
+    expect(screen.getByText('v2.0.0')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.queryByText('Could not load version metadata')).toBeNull());
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+
+  it('collapses the expanded version when the version query parameter is removed', async () => {
+    window.history.replaceState(null, '', '/ext/kane/demo?version=2.0.0');
+    apiMock.getVersion.mockResolvedValue({
+      namespace: 'kane',
+      id: 'demo',
+      version: '2.0.0',
+      status: 'pending',
+      name: 'Demo Extension',
+      license: 'MIT',
+      description: 'A test extension.',
+      createdAt: '2026-03-01T00:00:00Z',
+      downloads: 0,
+    });
+    const { rerender } = render(
+      <ExtensionDetailPage namespace="kane" id="demo" onNavigate={noop} />,
+    );
+
+    await screen.findByRole('heading', { level: 1, name: 'Demo Extension' });
+    expect(await screen.findByText('v2.0.0')).toBeInTheDocument();
+
+    // Simulate a navigation that drops the param (e.g. browser back).
+    window.history.replaceState(null, '', '/ext/kane/demo');
+    rerender(<ExtensionDetailPage namespace="kane" id="demo" onNavigate={noop} />);
+
+    await waitFor(() => expect(screen.queryByText('v2.0.0')).toBeNull());
   });
 
   it('does not ask a visitor for transfer offers it could not answer', async () => {

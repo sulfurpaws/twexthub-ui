@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { ApiError } from '../services/api';
+import { api, ApiError } from '../services/api';
+import { useAuthDescriptor, useOidcCallback } from '../hooks/useOidc';
 import { BrandLogo } from '../components/BrandLogo';
 import { Icon } from '../components/Icon';
 
@@ -10,10 +11,19 @@ interface LoginPageProps {
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const { login } = useAuth();
+  const { descriptor, loading: loadingOptions, error: descriptorError } = useAuthDescriptor();
   const [namespace, setNamespace] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useOidcCallback({
+    onSignedIn: () => onNavigate('dashboard'),
+    onError: (message) => setError(message),
+  });
+
+  const oidc = descriptor?.oidc ?? null;
+  const passwordAuth = descriptor?.passwordAuth ?? true;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,6 +51,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     }
   };
 
+  const handleOidcSignIn = () => {
+    window.location.assign(api.getOidcAuthorizeUrl(`${window.location.origin}/login`));
+  };
+
   return (
     <div className="min-h-[70vh] flex items-center justify-center px-4 py-12">
       <div className="card w-full max-w-sm p-6 sm:p-8 space-y-6">
@@ -50,81 +64,123 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
           </div>
           <h1 className="text-2xl font-display font-semibold text-ink">Sign in to Twext</h1>
           <p className="text-sm text-ink-3">
-            Enter your username and password to manage your extensions.
+            {passwordAuth
+              ? 'Enter your username and password to manage your extensions.'
+              : 'Continue with your identity provider to manage your extensions.'}
           </p>
         </div>
 
-        {error && (
+        {loadingOptions ? (
+          <div className="space-y-3" role="status" aria-label="Loading sign-in options">
+            <div className="h-5 w-2/3 mx-auto bg-wash dark:bg-raised rounded motion-safe:animate-pulse" />
+            <div className="h-9 bg-wash dark:bg-raised rounded motion-safe:animate-pulse" />
+            <div className="h-32 bg-wash dark:bg-raised rounded motion-safe:animate-pulse" />
+          </div>
+        ) : descriptorError ? (
           <div data-tone="danger" className="alert items-center text-sm">
             <Icon name="error" className="shrink-0" />
-            <div className="leading-tight">{error}</div>
+            <div className="leading-tight">{descriptorError}</div>
           </div>
+        ) : (
+          <>
+            {error && (
+              <div data-tone="danger" className="alert items-center text-sm">
+                <Icon name="error" className="shrink-0" />
+                <div className="leading-tight">{error}</div>
+              </div>
+            )}
+
+            {oidc && (
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={handleOidcSignIn}
+                  disabled={loadingOptions}
+                  className="btn btn-secondary w-full py-2.5 text-sm disabled:opacity-50"
+                >
+                  <Icon name="shield" />
+                  <span>Continue with identity provider</span>
+                </button>
+                {passwordAuth && (
+                  <div className="flex items-center gap-3 text-micro uppercase tracking-wider text-ink-3">
+                    <span className="h-px flex-1 bg-line" />
+                    or
+                    <span className="h-px flex-1 bg-line" />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {passwordAuth && (
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label htmlFor="login-namespace" className="label block mb-1.5">
+                    Username
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-3 font-mono">
+                      @
+                    </span>
+                    <input
+                      id="login-namespace"
+                      name="namespace"
+                      type="text"
+                      required
+                      autoComplete="username"
+                      value={namespace}
+                      onChange={(e) => setNamespace(e.target.value)}
+                      placeholder="your-username"
+                      className="input font-mono pl-7"
+                    />
+                  </div>
+                  <p className="text-xs text-ink-3 mt-1">
+                    Example: <code className="text-ink-2">kanemarshall</code>
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="login-password" className="label block mb-1.5">
+                    Password
+                  </label>
+                  <input
+                    id="login-password"
+                    name="password"
+                    type="password"
+                    required
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="input"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="btn btn-primary w-full py-2.5 text-sm disabled:opacity-50"
+                >
+                  <Icon name="login" />
+                  <span>{loading ? 'Signing in...' : 'Sign in'}</span>
+                </button>
+              </form>
+            )}
+
+            {passwordAuth && (
+              <div className="pt-4 border-t border-line text-center">
+                <p className="text-sm text-ink-2">
+                  Don't have an account yet?{' '}
+                  <button
+                    onClick={() => onNavigate('signup')}
+                    className="text-lilac-700 dark:text-lilac-300 font-semibold hover:underline underline-offset-4 inline-flex items-center gap-0.5"
+                  >
+                    Sign up <Icon name="arrow_forward" className="icon-xs" />
+                  </button>
+                </p>
+              </div>
+            )}
+          </>
         )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="login-namespace" className="label block mb-1.5">
-              Username
-            </label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-3 font-mono">
-                @
-              </span>
-              <input
-                id="login-namespace"
-                name="namespace"
-                type="text"
-                required
-                autoComplete="username"
-                value={namespace}
-                onChange={(e) => setNamespace(e.target.value)}
-                placeholder="your-username"
-                className="input font-mono pl-7"
-              />
-            </div>
-            <p className="text-xs text-ink-3 mt-1">
-              Example: <code className="text-ink-2">kanemarshall</code>
-            </p>
-          </div>
-
-          <div>
-            <label htmlFor="login-password" className="label block mb-1.5">
-              Password
-            </label>
-            <input
-              id="login-password"
-              name="password"
-              type="password"
-              required
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              className="input"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="btn btn-primary w-full py-2.5 text-sm disabled:opacity-50"
-          >
-            <Icon name="login" />
-            <span>{loading ? 'Signing in...' : 'Sign in'}</span>
-          </button>
-        </form>
-
-        <div className="pt-4 border-t border-line text-center">
-          <p className="text-sm text-ink-2">
-            Don't have an account yet?{' '}
-            <button
-              onClick={() => onNavigate('signup')}
-              className="text-lilac-700 dark:text-lilac-300 font-semibold hover:underline underline-offset-4 inline-flex items-center gap-0.5"
-            >
-              Sign up <Icon name="arrow_forward" className="icon-xs" />
-            </button>
-          </p>
-        </div>
       </div>
     </div>
   );

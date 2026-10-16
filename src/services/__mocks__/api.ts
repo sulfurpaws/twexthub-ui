@@ -69,11 +69,42 @@ export const api = {
   getOrganizationWebhooks: vi.fn(),
   createOrganizationWebhook: vi.fn(),
   deleteOrganizationWebhook: vi.fn(),
+  getOrganizationWebhookDeliveries: vi.fn(async () => ({
+    data: [],
+    pagination: { nextCursor: null, hasMore: false },
+  })),
+  redeliverOrganizationWebhook: vi.fn(),
+  getUserWebhooks: vi.fn(),
+  createUserWebhook: vi.fn(),
+  deleteUserWebhook: vi.fn(),
+  getUserWebhookDeliveries: vi.fn(async () => ({
+    data: [],
+    pagination: { nextCursor: null, hasMore: false },
+  })),
+  redeliverUserWebhook: vi.fn(),
+  getWebhookDeliveries: vi.fn(async () => ({
+    data: [],
+    pagination: { nextCursor: null, hasMore: false },
+  })),
+  redeliverWebhook: vi.fn(),
+  getExtensionVersions: vi.fn(async () => ({
+    data: [],
+    pagination: { nextCursor: null, hasMore: false },
+  })),
   uploadOrganizationImage: vi.fn(),
   deleteOrganizationImage: vi.fn(),
   login: vi.fn(),
   signup: vi.fn(),
   logout: vi.fn(),
+  getAuthDescriptor: vi.fn(async () => ({ passwordAuth: true, oidc: null })),
+  getOidcAuthorizeUrl: vi.fn((returnTo?: string) => {
+    const qs = returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : '';
+    return `/api/v2/auth/oidc/authorize${qs}`;
+  }),
+  exchangeOidcCode: vi.fn(),
+  linkOidc: vi.fn(),
+  getOidcIdentities: vi.fn(async () => []),
+  deleteOidcIdentity: vi.fn(),
   getMe: vi.fn(),
   acceptTerms: vi.fn(),
   updateUser: vi.fn(),

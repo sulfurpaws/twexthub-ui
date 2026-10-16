@@ -15,6 +15,8 @@ import {
   MarkNotificationsReadResult,
   Meta,
   NotificationList,
+  OidcIdentity,
+  OidcLinkResult,
   Organization,
   OrganizationOwner,
   PaginatedList,
@@ -35,6 +37,8 @@ import {
   VersionInfo,
   Webhook,
   WebhookCreated,
+  WebhookDelivery,
+  AuthDescriptor,
 } from '../types/api';
 
 const STORAGE_KEY_TOKEN = 'twexthub_auth_token';
@@ -282,6 +286,10 @@ class ApiService {
     return this.request<Meta>('/meta');
   }
 
+  async getAuthDescriptor(): Promise<AuthDescriptor> {
+    return this.request<AuthDescriptor>('/auth');
+  }
+
   async getExtensions(params?: {
     cursor?: string;
     limit?: number;
@@ -458,6 +466,33 @@ class ApiService {
     );
   }
 
+  async getWebhookDeliveries(
+    namespace: string,
+    id: string,
+    webhookId: number,
+    params?: { cursor?: string; limit?: number },
+  ): Promise<PaginatedList<WebhookDelivery>> {
+    const query = new URLSearchParams();
+    if (params?.cursor) query.set('cursor', params.cursor);
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString();
+    return this.request<PaginatedList<WebhookDelivery>>(
+      `/@${encodeURIComponent(namespace)}/${encodeURIComponent(id)}/webhooks/${webhookId}/deliveries${qs ? `?${qs}` : ''}`,
+    );
+  }
+
+  async redeliverWebhook(
+    namespace: string,
+    id: string,
+    webhookId: number,
+    deliveryId: number,
+  ): Promise<WebhookDelivery> {
+    return this.request<WebhookDelivery>(
+      `/@${encodeURIComponent(namespace)}/${encodeURIComponent(id)}/webhooks/${webhookId}/deliveries/${deliveryId}/redeliver`,
+      { method: 'POST' },
+    );
+  }
+
   /** A non-null message marks the version deprecated; `null` clears it. */
   async deprecateVersion(
     namespace: string,
@@ -492,6 +527,58 @@ class ApiService {
 
   async getUser(namespace: string): Promise<User> {
     return this.request<User>(`/users/${encodeURIComponent(namespace)}`);
+  }
+
+  async getUserWebhooks(namespace: string): Promise<Webhook[]> {
+    const res = await this.request<{ data: Webhook[] }>(
+      `/users/${encodeURIComponent(namespace)}/webhooks`,
+    );
+    return this.normalizeRows<Webhook>(res.data);
+  }
+
+  async createUserWebhook(
+    namespace: string,
+    payload: CreateWebhookPayload,
+  ): Promise<WebhookCreated> {
+    const created = await this.request<WebhookCreated>(
+      `/users/${encodeURIComponent(namespace)}/webhooks`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+    );
+    return this.normalizeRow<WebhookCreated>(created);
+  }
+
+  async deleteUserWebhook(namespace: string, webhookId: number): Promise<void> {
+    await this.request<void>(`/users/${encodeURIComponent(namespace)}/webhooks/${webhookId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getUserWebhookDeliveries(
+    namespace: string,
+    webhookId: number,
+    params?: { cursor?: string; limit?: number },
+  ): Promise<PaginatedList<WebhookDelivery>> {
+    const query = new URLSearchParams();
+    if (params?.cursor) query.set('cursor', params.cursor);
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString();
+    return this.request<PaginatedList<WebhookDelivery>>(
+      `/users/${encodeURIComponent(namespace)}/webhooks/${webhookId}/deliveries${qs ? `?${qs}` : ''}`,
+    );
+  }
+
+  async redeliverUserWebhook(
+    namespace: string,
+    webhookId: number,
+    deliveryId: number,
+  ): Promise<WebhookDelivery> {
+    return this.request<WebhookDelivery>(
+      `/users/${encodeURIComponent(namespace)}/webhooks/${webhookId}/deliveries/${deliveryId}/redeliver`,
+      { method: 'POST' },
+    );
   }
 
   // --- Organizations ---
@@ -615,6 +702,31 @@ class ApiService {
     });
   }
 
+  async getOrganizationWebhookDeliveries(
+    namespace: string,
+    webhookId: number,
+    params?: { cursor?: string; limit?: number },
+  ): Promise<PaginatedList<WebhookDelivery>> {
+    const query = new URLSearchParams();
+    if (params?.cursor) query.set('cursor', params.cursor);
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString();
+    return this.request<PaginatedList<WebhookDelivery>>(
+      `/orgs/${encodeURIComponent(namespace)}/webhooks/${webhookId}/deliveries${qs ? `?${qs}` : ''}`,
+    );
+  }
+
+  async redeliverOrganizationWebhook(
+    namespace: string,
+    webhookId: number,
+    deliveryId: number,
+  ): Promise<WebhookDelivery> {
+    return this.request<WebhookDelivery>(
+      `/orgs/${encodeURIComponent(namespace)}/webhooks/${webhookId}/deliveries/${deliveryId}/redeliver`,
+      { method: 'POST' },
+    );
+  }
+
   /**
    * Uploads an organization's avatar or banner. Same raw-bytes body and same
    * limits as for an account; the response is the whole updated organization,
@@ -682,6 +794,51 @@ class ApiService {
       this.setToken(null);
       this.setStoredUser(null);
     }
+  }
+
+  // --- OpenID Connect (identity provider) ---
+
+  /**
+   * Where the browser should go to start a sign-in through the provider. This
+   * is a top-level navigation, not a fetch: the API answers with a redirect to
+   * the provider, and the callback later sends the browser back to `returnTo`
+   * carrying a one-time `oidc_code` (or `oidc_error`).
+   */
+  getOidcAuthorizeUrl(returnTo?: string): string {
+    const query = new URLSearchParams();
+    if (returnTo) query.set('returnTo', returnTo);
+    const qs = query.toString();
+    return `${this.getBaseUrl()}/auth/oidc/authorize${qs ? `?${qs}` : ''}`;
+  }
+
+  /** Trades the provider's one-time code for a session, and stores it. */
+  async exchangeOidcCode(code: string): Promise<AuthSessionResponse> {
+    const res = await this.request<AuthSessionResponse>('/auth/oidc/exchange', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+    this.setToken(res.token);
+    this.setStoredUser(res.user);
+    return res;
+  }
+
+  /** Starts the round-trip that links the provider to the signed-in account. */
+  async linkOidc(returnTo?: string): Promise<OidcLinkResult> {
+    return this.request<OidcLinkResult>('/auth/oidc/link', {
+      method: 'POST',
+      body: JSON.stringify(returnTo ? { returnTo } : {}),
+    });
+  }
+
+  async getOidcIdentities(): Promise<OidcIdentity[]> {
+    const res = await this.request<{ data: OidcIdentity[] }>('/auth/oidc/identities');
+    return res.data;
+  }
+
+  async deleteOidcIdentity(id: string): Promise<void> {
+    await this.request<void>(`/auth/oidc/identities/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
   }
 
   // GET /me - returns the caller's own authenticated account
@@ -866,6 +1023,21 @@ class ApiService {
           Accept: 'text/javascript, application/javascript, */*',
         },
       },
+    );
+  }
+
+  async getExtensionVersions(
+    namespace: string,
+    id: string,
+    params?: { status?: string; cursor?: string; limit?: number },
+  ): Promise<PaginatedList<VersionInfo>> {
+    const query = new URLSearchParams();
+    if (params?.status) query.set('status', params.status);
+    if (params?.cursor) query.set('cursor', params.cursor);
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString();
+    return this.request<PaginatedList<VersionInfo>>(
+      `/@${encodeURIComponent(namespace)}/${encodeURIComponent(id)}/versions${qs ? `?${qs}` : ''}`,
     );
   }
 

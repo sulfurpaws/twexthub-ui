@@ -60,8 +60,14 @@ export const App: React.FC = () => {
 
   // Parse route components
   const renderCurrentPage = () => {
+    // The query string carries page state (e.g. `?version=` on an extension,
+    // or the OIDC callback's `?oidc_code=`), and pages read it straight off
+    // `window.location`. Path segments are matched against the query-free
+    // route so "ext/ns/id?version=x" does not put the query in the id.
+    const [pathRoute] = route.split('?');
+
     // Search route with optional query e.g. "search?q=foo"
-    if (route.startsWith('search')) {
+    if (pathRoute.startsWith('search')) {
       const qIndex = route.indexOf('?q=');
       const query = qIndex !== -1 ? decodeURIComponent(route.substring(qIndex + 3)) : '';
       return (
@@ -74,8 +80,8 @@ export const App: React.FC = () => {
     }
 
     // Author profile route e.g. "author/:namespace"
-    if (route.startsWith('author/')) {
-      const namespace = route.substring('author/'.length);
+    if (pathRoute.startsWith('author/')) {
+      const namespace = pathRoute.substring('author/'.length);
       if (namespace) {
         return (
           <AuthorPage
@@ -91,8 +97,8 @@ export const App: React.FC = () => {
     // the public profile and "org/:namespace/settings" what an owner may change.
     // An organization shares its namespace with accounts, so the two are
     // addressed separately and "org/" never collides with "author/".
-    if (route.startsWith('org/')) {
-      const parts = route.split('/');
+    if (pathRoute.startsWith('org/')) {
+      const parts = pathRoute.split('/');
       const namespace = parts[1] || '';
       if (namespace && parts[2] === 'settings') {
         return (
@@ -115,8 +121,8 @@ export const App: React.FC = () => {
     }
 
     // Extension detail route e.g. "ext/:namespace/:id"
-    if (route.startsWith('ext/')) {
-      const parts = route.split('/');
+    if (pathRoute.startsWith('ext/')) {
+      const parts = pathRoute.split('/');
       const namespace = parts[1] || '';
       const id = parts[2] || '';
       if (namespace && id) {
@@ -131,7 +137,7 @@ export const App: React.FC = () => {
       }
     }
 
-    switch (route) {
+    switch (pathRoute) {
       case 'home':
         return <HomePage key={configRefreshKey} onNavigate={navigate} />;
       case 'login':

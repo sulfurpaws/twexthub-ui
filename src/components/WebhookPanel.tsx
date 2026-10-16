@@ -4,6 +4,7 @@ import { useConfirm } from '../hooks/useConfirm';
 import { WEBHOOK_EVENTS, Webhook, WebhookEvent } from '../types/api';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
+import { WebhookDeliveryLog } from './WebhookDeliveryLog';
 
 const EVENT_LABELS: Record<WebhookEvent, string> = {
   'version.published': 'Version published',
@@ -22,6 +23,10 @@ interface WebhookPanelProps {
    */
   id?: string;
   organization?: boolean;
+  /**
+   * Account-level webhooks for the given namespace (user). Uses /users endpoints.
+   */
+  account?: boolean;
   onClose: () => void;
 }
 
@@ -29,6 +34,7 @@ export const WebhookPanel: React.FC<WebhookPanelProps> = ({
   namespace,
   id,
   organization = false,
+  account = false,
   onClose,
 }) => {
   const { confirm, confirmDialog } = useConfirm();
@@ -44,6 +50,7 @@ export const WebhookPanel: React.FC<WebhookPanelProps> = ({
   const [active, setActive] = useState(true);
   const [copied, setCopied] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [selectedHook, setSelectedHook] = useState<Webhook | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -52,14 +59,16 @@ export const WebhookPanel: React.FC<WebhookPanelProps> = ({
       setWebhooks(
         organization
           ? await api.getOrganizationWebhooks(namespace)
-          : await api.getWebhooks(namespace, id as string),
+          : account
+            ? await api.getUserWebhooks(namespace)
+            : await api.getWebhooks(namespace, id as string),
       );
     } catch (err: unknown) {
       setError(err instanceof ApiError ? err.message : 'Failed to load webhooks');
     } finally {
       setLoading(false);
     }
-  }, [namespace, id, organization]);
+  }, [namespace, id, organization, account]);
 
   useEffect(() => {
     load();
@@ -82,11 +91,13 @@ export const WebhookPanel: React.FC<WebhookPanelProps> = ({
     try {
       const created = organization
         ? await api.createOrganizationWebhook(namespace, { url: url.trim(), events, active })
-        : await api.createWebhook(namespace, id as string, {
-            url: url.trim(),
-            events,
-            active,
-          });
+        : account
+          ? await api.createUserWebhook(namespace, { url: url.trim(), events, active })
+          : await api.createWebhook(namespace, id as string, {
+              url: url.trim(),
+              events,
+              active,
+            });
       setUrl('');
       setEvents([]);
       setActive(true);
@@ -123,6 +134,7 @@ export const WebhookPanel: React.FC<WebhookPanelProps> = ({
     setError(null);
     try {
       if (organization) await api.deleteOrganizationWebhook(namespace, hook.id);
+      else if (account) await api.deleteUserWebhook(namespace, hook.id);
       else await api.deleteWebhook(namespace, id as string, hook.id);
       setWebhooks((prev) => prev.filter((h) => h.id !== hook.id));
     } catch (err: unknown) {
@@ -313,15 +325,25 @@ export const WebhookPanel: React.FC<WebhookPanelProps> = ({
                   {hook.lastDeliveryStatus ? ` — ${deliveryLabel(hook.lastDeliveryStatus)}` : ''}
                 </div>
               </div>
-              <button
-                onClick={() => handleDelete(hook)}
-                disabled={deletingId === hook.id}
-                title="Delete webhook"
-                aria-label={`Delete webhook ${hook.url}`}
-                className="p-1.5 text-ink-3 hover:text-rose-600 dark:hover:text-rose-400 rounded-md hover:bg-rose-50 dark:hover:bg-rose-900/40 transition-colors disabled:opacity-50 shrink-0"
-              >
-                <Icon name="delete" />
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => setSelectedHook(hook)}
+                  title="View deliveries"
+                  aria-label={`View deliveries for ${hook.url}`}
+                  className="p-1.5 text-ink-3 hover:text-lilac-700 dark:hover:text-lilac-300 rounded-md hover:bg-wash dark:hover:bg-raised transition-colors shrink-0"
+                >
+                  <Icon name="schedule" />
+                </button>
+                <button
+                  onClick={() => handleDelete(hook)}
+                  disabled={deletingId === hook.id}
+                  title="Delete webhook"
+                  aria-label={`Delete webhook ${hook.url}`}
+                  className="p-1.5 text-ink-3 hover:text-rose-600 dark:hover:text-rose-400 rounded-md hover:bg-rose-50 dark:hover:bg-rose-900/40 transition-colors disabled:opacity-50 shrink-0"
+                >
+                  <Icon name="delete" />
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -330,6 +352,17 @@ export const WebhookPanel: React.FC<WebhookPanelProps> = ({
       )}
 
       {confirmDialog}
+
+      {selectedHook && (
+        <WebhookDeliveryLog
+          namespace={namespace}
+          id={id}
+          organization={organization}
+          account={account}
+          webhook={selectedHook}
+          onClose={() => setSelectedHook(null)}
+        />
+      )}
     </Modal>
   );
 };
