@@ -1,7 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { api, ApiError } from '../services/api';
 import { useConfirm } from '../hooks/useConfirm';
-import { WEBHOOK_EVENTS, Webhook, WebhookEvent } from '../types/api';
+import {
+  WEBHOOK_EVENTS,
+  Webhook,
+  WebhookEvent,
+  WebhookDelivery,
+  Pagination,
+} from '../types/api';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
 
@@ -44,6 +50,15 @@ export const WebhookPanel: React.FC<WebhookPanelProps> = ({
   const [active, setActive] = useState(true);
   const [copied, setCopied] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [selectedHook, setSelectedHook] = useState<Webhook | null>(null);
+  const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([]);
+  const [loadingDeliveries, setLoadingDeliveries] = useState(false);
+  const [deliveriesError, setDeliveriesError] = useState<string | null>(null);
+  const [deliveriesPagination, setDeliveriesPagination] = useState<Pagination>({
+    nextCursor: null,
+    hasMore: false,
+  });
+  const [redeliveringId, setRedeliveringId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
