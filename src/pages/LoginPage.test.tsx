@@ -111,7 +111,9 @@ describe('LoginPage', () => {
     window.history.replaceState(null, '', '/login?oidc_error=provider_unavailable');
     render(<LoginPage onNavigate={noop} />);
     expect(
-      await screen.findByText('The identity provider could not be reached. Please try again later.'),
+      await screen.findByText(
+        'The identity provider could not be reached. Please try again later.',
+      ),
     ).toBeInTheDocument();
   });
 });

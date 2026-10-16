@@ -81,7 +81,7 @@ export const api = {
   }),
   exchangeOidcCode: vi.fn(),
   linkOidc: vi.fn(),
-  getOidcIdentities: vi.fn(),
+  getOidcIdentities: vi.fn(async () => []),
   deleteOidcIdentity: vi.fn(),
   getMe: vi.fn(),
   acceptTerms: vi.fn(),

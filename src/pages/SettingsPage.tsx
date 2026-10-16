@@ -4,8 +4,10 @@ import { useToast } from '../context/ToastContext';
 import { api, ApiError } from '../services/api';
 import { ImageUploadField } from '../components/ImageUploadField';
 import { useConfirm } from '../hooks/useConfirm';
+import { useAuthDescriptor, useOidcCallback } from '../hooks/useOidc';
 import {
   AutomationToken,
+  OidcIdentity,
   Pagination,
   ProfileImages,
   Session,
@@ -152,6 +154,70 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
   const [editTokenScopes, setEditTokenScopes] = useState<TokenScope[]>([]);
   const [savingToken, setSavingToken] = useState(false);
   const [showAccountWebhooks, setShowAccountWebhooks] = useState(false);
+
+  // Linked identity-provider accounts
+  const { descriptor } = useAuthDescriptor();
+  const [identities, setIdentities] = useState<OidcIdentity[]>([]);
+  const [loadingIdentities, setLoadingIdentities] = useState(true);
+  const [linkingIdentity, setLinkingIdentity] = useState(false);
+  const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
+
+  const loadIdentities = useCallback(async () => {
+    setLoadingIdentities(true);
+    try {
+      setIdentities(await api.getOidcIdentities());
+    } catch {
+      setIdentities([]);
+    } finally {
+      setLoadingIdentities(false);
+    }
+  }, []);
+
+  const handleLinkIdentity = useCallback(async () => {
+    setLinkingIdentity(true);
+    try {
+      const { authorizationUrl } = await api.linkOidc('/settings');
+      window.location.assign(authorizationUrl);
+    } catch (err: unknown) {
+      setLinkingIdentity(false);
+      toastError(err instanceof ApiError ? err.message : 'Could not start linking.');
+    }
+  }, [toastError]);
+
+  const handleUnlinkIdentity = useCallback(
+    async (identity: OidcIdentity) => {
+      const confirmed = await confirm({
+        title: 'Unlink identity',
+        message: `Unlink ${identity.email || identity.subject} from this account?`,
+        confirmLabel: 'Unlink',
+        variant: 'danger',
+      });
+      if (!confirmed) return;
+      setUnlinkingId(identity.id);
+      try {
+        await api.deleteOidcIdentity(identity.id);
+        setIdentities((prev) => prev.filter((i) => i.id !== identity.id));
+        toastSuccess('Identity unlinked.');
+      } catch (err: unknown) {
+        toastError(err instanceof ApiError ? err.message : 'Could not unlink the identity.');
+      } finally {
+        setUnlinkingId(null);
+      }
+    },
+    [confirm, toastError, toastSuccess],
+  );
+
+  useEffect(() => {
+    loadIdentities();
+  }, [loadIdentities]);
+
+  useOidcCallback({
+    onLinked: () => {
+      toastSuccess('Identity linked.');
+      loadIdentities();
+    },
+    onError: (message) => toastError(message),
+  });
 
   // The bearer token is an opaque secret unrelated to the `Session.id` (a DB row id),
   // so the current session can't be identified from the token directly. When the API
@@ -734,6 +800,61 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
                     </button>
                   </div>
                 </form>
+              </div>
+
+              {/* Linked identities */}
+              <div className="card p-5 space-y-4">
+                <div className="flex items-center gap-2">
+                  <Icon name="shield" className="text-lilac-500 dark:text-lilac-300" />
+                  <h2 className="text-sm font-semibold text-ink">Linked identities</h2>
+                </div>
+                <p className="text-xs text-ink-2 leading-relaxed">
+                  Sign in to this account through your identity provider. Linking lets the provider
+                  confirm who you are alongside, or instead of, your password.
+                </p>
+
+                {loadingIdentities ? (
+                  <div className="h-12 bg-wash dark:bg-raised rounded animate-pulse" />
+                ) : identities.length > 0 ? (
+                  <div className="divide-y divide-line border border-line rounded-lg">
+                    {identities.map((identity) => (
+                      <div
+                        key={identity.id}
+                        className="p-3 flex items-center justify-between gap-3 text-xs bg-surface dark:bg-raised"
+                      >
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="font-mono text-ink truncate">
+                            {identity.email || identity.subject}
+                          </div>
+                          <div className="text-meta text-ink-3 truncate">
+                            {identity.issuer} • Linked{' '}
+                            {new Date(identity.createdAt).toLocaleDateString()}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleUnlinkIdentity(identity)}
+                          disabled={unlinkingId === identity.id}
+                          className="px-2.5 py-1 text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-900/60 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 shrink-0"
+                        >
+                          {unlinkingId === identity.id ? 'Unlinking...' : 'Unlink'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-ink-3">No identities linked yet.</p>
+                )}
+
+                {descriptor?.oidc && (
+                  <button
+                    onClick={handleLinkIdentity}
+                    disabled={linkingIdentity}
+                    className="btn btn-secondary btn-sm disabled:opacity-50"
+                  >
+                    <Icon name="link" className="icon-sm" />
+                    <span>{linkingIdentity ? 'Redirecting...' : 'Link identity provider'}</span>
+                  </button>
+                )}
               </div>
 
               {/* Danger zone */}
