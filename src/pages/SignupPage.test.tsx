@@ -1,17 +1,21 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SignupPage } from './SignupPage';
+import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { makeAuthState, noop } from '../test/testUtils';
 
 vi.mock('../services/api');
 vi.mock('../context/AuthContext');
 
+const apiMock = vi.mocked(api);
 const useAuthMock = vi.mocked(useAuth);
 let authState: ReturnType<typeof makeAuthState>;
 
 beforeEach(() => {
+  window.history.replaceState(null, '', '/signup');
+  apiMock.getAuthDescriptor.mockResolvedValue({ passwordAuth: true, oidc: null });
   authState = makeAuthState({
     user: null,
     token: null,
@@ -20,6 +24,10 @@ beforeEach(() => {
   });
   useAuthMock.mockReset();
   useAuthMock.mockReturnValue(authState);
+});
+
+afterEach(() => {
+  window.history.replaceState(null, '', '/');
 });
 
 describe('SignupPage', () => {
@@ -108,5 +116,37 @@ describe('SignupPage', () => {
     expect(authState.signup).toHaveBeenCalled();
     expect(authState.acceptCurrentTerms).not.toHaveBeenCalled();
     expect(onNavigate).toHaveBeenCalledWith('dashboard');
+  });
+
+  it('offers signing up through the provider when one is configured', async () => {
+    apiMock.getAuthDescriptor.mockResolvedValue({
+      passwordAuth: true,
+      oidc: { issuer: 'https://idp.example', required: false },
+    });
+    render(<SignupPage onNavigate={noop} />);
+    expect(
+      await screen.findByRole('button', { name: /Sign up with identity provider/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Minimum 8 characters')).toBeInTheDocument();
+  });
+
+  it('hides the password form when the provider is the only way in', async () => {
+    apiMock.getAuthDescriptor.mockResolvedValue({
+      passwordAuth: false,
+      oidc: { issuer: 'https://idp.example', required: true },
+    });
+    render(<SignupPage onNavigate={noop} />);
+    expect(
+      await screen.findByRole('button', { name: /Sign up with identity provider/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Minimum 8 characters')).not.toBeInTheDocument();
+  });
+
+  it('completes a provider sign-up carried back in the URL', async () => {
+    const onNavigate = vi.fn();
+    window.history.replaceState(null, '', '/signup?oidc_code=one-time');
+    render(<SignupPage onNavigate={onNavigate} />);
+    await waitFor(() => expect(authState.completeOidcLogin).toHaveBeenCalledWith('one-time'));
+    await waitFor(() => expect(onNavigate).toHaveBeenCalledWith('dashboard'));
   });
 });
